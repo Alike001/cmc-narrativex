@@ -20,10 +20,10 @@ const REGIME_TONES = {
 
 const LIFECYCLE_TONES = {
   Emerging: "amber",
-  Accelerating: "signal",
+  Building: "signal",
   Dominant: "pulse",
+  Peak: "amber",
   Exhausting: "danger",
-  "Rotating Out": "neutral",
 };
 
 function SkeletonBlock({ className = "" }) {
@@ -239,39 +239,108 @@ function NarrativeRotationPanel({ narratives }) {
 }
 
 function NarrativeHeatmapPanel({ heatmap }) {
+  const lead = heatmap[0];
+
   return (
     <WidgetCard
       eyebrow="Narrative heatmap"
       title="Top 10 categories"
-      headerRight={<Badge tone="signal">{heatmap.length} categories</Badge>}
-      className="lg:col-span-2"
+      headerRight={
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="signal">{heatmap.length} categories</Badge>
+          {lead ? <Badge tone="pulse">#1 {lead.name}</Badge> : null}
+        </div>
+      }
+      className="lg:col-span-4"
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        {heatmap.slice(0, 10).map((item) => (
+      <div className="overflow-hidden rounded-2xl border border-white/5 bg-ink-850/60">
+        <div className="hidden items-center gap-3 border-b border-white/5 px-4 py-3 text-[11px] uppercase tracking-[0.16em] text-mist-500 md:grid md:grid-cols-[44px_minmax(0,2fr)_84px_120px_96px_96px_96px]">
+          <span>Rank</span>
+          <span>Narrative</span>
+          <span>Score</span>
+          <span>Lifecycle</span>
+          <span>24h price</span>
+          <span>Volume</span>
+          <span>Market cap</span>
+        </div>
+        <div className="divide-y divide-white/5">
+          {heatmap.slice(0, 10).map((item) => (
           <div
             key={item.name}
-            className="rounded-2xl border border-white/5 p-3"
-            style={{
-              background: `linear-gradient(180deg, rgba(19, 22, 32, 0.92), rgba(19, 22, 32, 0.7)), rgba(255,255,255,${Math.max(
-                0.02,
-                Math.min(0.18, item.score / 700),
-              )})`,
-            }}
+            className={`grid gap-3 px-4 py-4 md:grid-cols-[44px_minmax(0,2fr)_84px_120px_96px_96px_96px] md:items-center ${
+              item.rank === 1 ? "bg-pulse-500/6" : "bg-transparent"
+            }`}
           >
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">#{item.rank}</p>
-                <p className="mt-1 font-display text-sm font-semibold text-mist-100">{item.name}</p>
+            <div className="flex items-center gap-3 md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Rank</span>
+              <span className="font-mono text-sm font-semibold text-mist-100">#{item.rank}</span>
+            </div>
+
+            <div className="min-w-0">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Narrative</span>
+              <div className="mt-1 flex items-center gap-2 md:mt-0">
+                <p className="truncate font-display text-sm font-semibold text-mist-100">{item.name}</p>
+                {item.rank === 1 ? <Badge tone="pulse">Lead</Badge> : null}
               </div>
-              <Badge tone={item.lifecycle === "Dominant" ? "pulse" : item.lifecycle === "Exhausting" ? "danger" : "neutral"}>
-                {item.score}
+            </div>
+
+            <div className="flex items-center justify-between md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Score</span>
+              <div className="flex items-center gap-3 md:justify-start">
+                <span className="font-mono text-sm font-semibold text-mist-100">{item.score}</span>
+                <div className="h-1.5 w-28 overflow-hidden rounded-full bg-ink-800">
+                  <div
+                    className={`h-full rounded-full ${
+                      item.rank === 1
+                        ? "bg-pulse-500"
+                        : item.lifecycle === "Exhausting"
+                          ? "bg-danger-500"
+                          : item.lifecycle === "Peak"
+                            ? "bg-amber-500"
+                            : "bg-signal-500"
+                    }`}
+                    style={{ width: `${item.score}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Lifecycle</span>
+                <Badge
+                  tone={
+                    item.lifecycle === "Exhausting"
+                      ? "danger"
+                      : item.lifecycle === "Peak"
+                        ? "amber"
+                        : item.lifecycle === "Dominant"
+                          ? "pulse"
+                          : item.lifecycle === "Building"
+                            ? "signal"
+                            : "neutral"
+                  }
+                >
+                  {item.lifecycle}
               </Badge>
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-mist-300">
-              {item.lifecycle} {item.avgPriceChange} / {item.marketCapChange} / {item.volumeChange}
-            </p>
+
+            <div className="flex items-center justify-between md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">24h price</span>
+              <span className="font-mono text-sm text-mist-300">{item.avgPriceChange}</span>
+            </div>
+
+            <div className="flex items-center justify-between md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Volume</span>
+              <span className="font-mono text-sm text-mist-300">{item.volumeChange}</span>
+            </div>
+
+            <div className="flex items-center justify-between md:block">
+              <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500 md:hidden">Market cap</span>
+              <span className="font-mono text-sm text-mist-300">{item.marketCapChange}</span>
+            </div>
           </div>
-        ))}
+          ))}
+        </div>
       </div>
     </WidgetCard>
   );
@@ -282,17 +351,34 @@ function NarrativeTimelinePanel({ timeline }) {
     <WidgetCard
       eyebrow="Narrative timeline"
       title="Lifecycle path"
-      headerRight={<Badge tone="neutral">4 stages</Badge>}
+      headerRight={<Badge tone="neutral">Dynamic</Badge>}
       className="lg:col-span-2"
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="space-y-3">
         {timeline.map((step, index) => (
           <div key={step.stage} className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
-            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
-              {String(index + 1).padStart(2, "0")} {step.title}
-            </p>
-            <p className="mt-2 text-sm font-medium text-mist-100">{step.value}</p>
-            <p className="mt-2 text-xs leading-relaxed text-mist-300">{step.detail}</p>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                  {String(index + 1).padStart(2, "0")} {step.title}
+                </p>
+                <p className="mt-2 text-sm font-medium text-mist-100">{step.value}</p>
+              </div>
+              <Badge
+                tone={
+                  step.stage === "peak"
+                    ? "pulse"
+                    : step.stage === "strengthening"
+                      ? "signal"
+                      : step.stage === "fading"
+                        ? "amber"
+                        : "neutral"
+                }
+              >
+                {step.stage}
+              </Badge>
+            </div>
+            <p className="mt-3 text-sm leading-relaxed text-mist-300">{step.detail}</p>
           </div>
         ))}
       </div>
@@ -312,6 +398,7 @@ function NarrativeExplanationPanel({ explanation }) {
     >
       <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
         <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+          <p className="text-sm leading-relaxed text-mist-300">{explanation?.summary}</p>
           <ul className="space-y-3">
             {bullets.map((bullet) => (
               <li key={bullet} className="flex gap-2 text-sm leading-relaxed text-mist-300">
@@ -324,9 +411,8 @@ function NarrativeExplanationPanel({ explanation }) {
         <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
           <p className="label-eyebrow">Interpretation</p>
           <p className="mt-2 text-sm leading-relaxed text-mist-300">
-            The narrative is only meaningful when category-level momentum, volume growth, and market-cap
-            expansion all point in the same direction. This panel keeps the read concise enough for
-            portfolio review while still anchored to live category data.
+            Live category data is weighted into a single rotation read so the same score drives the rank,
+            the lifecycle stage, and the timeline that explains why the narrative reached that state.
           </p>
         </div>
       </div>

@@ -47,7 +47,7 @@ type NarrativeRotationScore = {
   drivers: Array<{ label: string; value: string }>;
 };
 
-type NarrativeLifecycleState = "Emerging" | "Accelerating" | "Dominant" | "Exhausting" | "Rotating Out";
+type NarrativeLifecycleState = "Emerging" | "Building" | "Dominant" | "Peak" | "Exhausting";
 
 type NarrativeLifecycle = {
   state: NarrativeLifecycleState;
@@ -74,6 +74,7 @@ type NarrativeHeatmapItem = {
 
 type NarrativeExplanation = {
   title: string;
+  summary: string;
   bullets: string[];
 };
 
@@ -145,6 +146,7 @@ type GlobalMetrics = {
 type CmcMarketContext = {
   categories: CategoryItem[];
   ranked: CategoryItem[];
+  scored: Array<CategoryItem & { rotationScore: number; lifecycle: NarrativeLifecycleState; momentum: number }>;
   leader: CategoryItem;
   runnerUp: CategoryItem;
   secondary: CategoryItem;
@@ -380,25 +382,51 @@ function normalizeCategory(category: CategoryItem): CategoryItem {
   };
 }
 
-function scoreCategory(category: CategoryItem) {
-  const marketCapChange = toNumber(category.market_cap_change, 0);
-  const avgPriceChange = toNumber(category.avg_price_change, 0);
-  const volumeChange = toNumber(category.volume_change, 0);
-  const numTokens = toNumber(category.num_tokens, 0);
-  const marketCap = toNumber(category.market_cap, 0);
-
-  return (
-    marketCapChange * 2.4 +
-    avgPriceChange * 2 +
-    volumeChange * 0.8 +
-    Math.log10(Math.max(marketCap, 10)) * 1.1 +
-    Math.log10(Math.max(numTokens, 10))
-  );
-}
-
 function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext {
   const categories = inputCategories.map(normalizeCategory).filter((category) => Boolean(category.name));
-  const ranked = [...categories].sort((a, b) => scoreCategory(b) - scoreCategory(a));
+  const rawScores = categories.map((category) => {
+    const marketCapChange = toNumber(category.market_cap_change, 0);
+    const volumeChange = toNumber(category.volume_change, 0);
+    const avgPriceChange = toNumber(category.avg_price_change, 0);
+    const raw = marketCapChange * 0.4 + volumeChange * 0.35 + avgPriceChange * 0.25;
+    const momentum = volumeChange * 0.6 + avgPriceChange * 0.4;
+
+    return {
+      category,
+      raw,
+      momentum,
+    };
+  });
+
+  const mean =
+    rawScores.reduce((sum, item) => sum + item.raw, 0) / Math.max(1, rawScores.length);
+  const variance =
+    rawScores.reduce((sum, item) => sum + Math.pow(item.raw - mean, 2), 0) /
+    Math.max(1, rawScores.length);
+  const stdDev = Math.sqrt(variance) || 1;
+
+  const ranked = rawScores
+    .slice()
+    .sort((a, b) => {
+      if (b.raw !== a.raw) return b.raw - a.raw;
+      return `${a.category.name ?? a.category.title ?? ""}`.localeCompare(
+        `${b.category.name ?? b.category.title ?? ""}`,
+      );
+    })
+    .map((item, index) => {
+      const baseScore = 50 + ((item.raw - mean) / stdDev) * 12 + item.momentum * 0.3;
+      const lifecycle = lifecycleFromScore(baseScore);
+      const score = clamp(Math.round(baseScore - index * 0.2), 0, 100);
+
+      return {
+        ...item.category,
+        rotationScore: score,
+        lifecycle,
+        momentum: item.momentum,
+      };
+    })
+    .sort((a, b) => b.rotationScore - a.rotationScore);
+
   const fallback = FALLBACK_CATEGORIES.map(normalizeCategory);
   const safeRanked = ranked.length > 0 ? ranked : fallback;
 
@@ -407,7 +435,8 @@ function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext
   const secondary = safeRanked[2] ?? fallback[2] ?? runnerUp;
   const breadth = safeRanked.length > 0 ? clamp((safeRanked.filter((cat) => toNumber(cat.avg_price_change, 0) > 0).length / safeRanked.length) * 100, 0, 100) : 50;
   const momentum = safeRanked.length
-    ? safeRanked.slice(0, 8).reduce((sum, cat) => sum + scoreCategory(cat), 0) / Math.min(8, safeRanked.length)
+    ? safeRanked.slice(0, 8).reduce((sum, cat) => sum + toNumber(cat.volume_change, 0) * 0.6 + toNumber(cat.avg_price_change, 0) * 0.4, 0) /
+      Math.min(8, safeRanked.length)
     : 50;
   const volumePulse = safeRanked.length
     ? safeRanked.slice(0, 8).reduce((sum, cat) => sum + toNumber(cat.volume_change, 0), 0) / Math.min(8, safeRanked.length)
@@ -419,6 +448,7 @@ function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext
   return {
     categories: safeRanked,
     ranked: safeRanked,
+    scored: ranked,
     leader: leader ?? fallback[0],
     runnerUp: runnerUp ?? fallback[1] ?? fallback[0],
     secondary: secondary ?? fallback[2] ?? fallback[1] ?? fallback[0],
@@ -432,6 +462,14 @@ function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext
 function narrativeName(category: CategoryItem) {
   const name = (category.title ?? category.name ?? "Market Rotation").trim();
   return /narrative/i.test(name) ? name : `${name} Narrative`;
+}
+
+function lifecycleFromScore(score: number): NarrativeLifecycleState {
+  if (score <= 40) return "Emerging";
+  if (score <= 60) return "Building";
+  if (score <= 80) return "Dominant";
+  if (score <= 90) return "Peak";
+  return "Exhausting";
 }
 
 function buildAssetsFromCategory(category: CategoryItem) {
@@ -449,34 +487,33 @@ function buildAssetsFromCategory(category: CategoryItem) {
 }
 
 function deriveNarrativeStrength(category: CategoryItem, breadth: number, momentum: number): NarrativeStrength {
-  const marketCapChange = toNumber(category.market_cap_change, 0);
-  const avgPriceChange = toNumber(category.avg_price_change, 0);
-  const volumeChange = toNumber(category.volume_change, 0);
-  const score = clamp(
-    Math.round(50 + marketCapChange * 2.1 + avgPriceChange * 2.3 + volumeChange * 0.65 + breadth * 0.12 + momentum * 0.18),
-    58,
-    96,
-  );
+  const score = buildNarrativeRotationScore(category, { breadth, momentum }).score;
 
   return {
     score,
-    label: score >= 80 ? "Strong" : "Building",
-    trend: formatPercent(avgPriceChange),
+    label: score >= 81 ? "Strong" : "Building",
+    trend: formatPercent(toNumber(category.avg_price_change, 0)),
     socialAgreement: clamp(score + 4, 0, 99),
     onchainConfirmation: clamp(score - 2, 0, 99),
     priceConfirmation: clamp(score - 6, 0, 99),
   };
 }
 
-function buildNarrativeRotationScore(category: CategoryItem): NarrativeRotationScore {
+function buildNarrativeRotationScore(
+  category: CategoryItem,
+  context?: { breadth?: number; momentum?: number },
+): NarrativeRotationScore {
   const avgPriceChange = toNumber(category.avg_price_change, 0);
   const marketCapChange = toNumber(category.market_cap_change, 0);
   const volumeChange = toNumber(category.volume_change, 0);
-  const score = clamp(Math.round(50 + avgPriceChange * 2.3 + marketCapChange * 1.8 + volumeChange * 1.6), 0, 100);
+  const raw = marketCapChange * 0.4 + volumeChange * 0.35 + avgPriceChange * 0.25;
+  const breadthBonus = (context?.breadth ?? 50) * 0.06;
+  const momentumBonus = (context?.momentum ?? 0) * 0.25;
+  const score = clamp(Math.round(50 + raw * 3.2 + breadthBonus + momentumBonus), 0, 100);
 
   return {
     score,
-    label: score >= 82 ? "Overheated" : score >= 65 ? "Strong" : score >= 40 ? "Building" : "Weak",
+    label: score >= 91 ? "Overheated" : score >= 61 ? "Strong" : score >= 41 ? "Building" : "Weak",
     drivers: [
       { label: "Market cap change", value: formatPercent(marketCapChange) },
       { label: "Volume change", value: formatPercent(volumeChange) },
@@ -486,65 +523,66 @@ function buildNarrativeRotationScore(category: CategoryItem): NarrativeRotationS
 }
 
 function classifyNarrativeLifecycle(
-  category: CategoryItem,
   rotationScore: number,
-  context: CmcMarketContext,
+  momentum: number,
 ): NarrativeLifecycle {
-  const avgPriceChange = toNumber(category.avg_price_change, 0);
-  const volumeChange = toNumber(category.volume_change, 0);
-  const marketCapChange = toNumber(category.market_cap_change, 0);
-  const isWeakening = volumeChange < 0 || marketCapChange < 0 || avgPriceChange < 0;
-
-  if (rotationScore < 35) {
+  if (rotationScore <= 40) {
     return {
-      state: isWeakening ? "Rotating Out" : "Emerging",
-      description: "Early rotation is visible, but capital has not yet broadened into a durable trend.",
-      nextState: "Accelerating",
+      state: "Emerging",
+      description: "Early rotation is visible, but momentum is still insufficient to confirm broad participation.",
+      nextState: "Building",
     };
   }
 
-  if (rotationScore < 60) {
+  if (rotationScore <= 60) {
     return {
-      state: "Accelerating",
+      state: "Building",
       description: "Momentum is improving and liquidity is starting to confirm the narrative.",
       nextState: "Dominant",
     };
   }
 
-  if (rotationScore < 80) {
+  if (rotationScore <= 80) {
     return {
       state: "Dominant",
-      description: "The category is leading on both price and liquidity and remains the active tape.",
-      nextState: isWeakening || context.runnerUp && scoreCategory(context.runnerUp) > scoreCategory(category) * 0.92 ? "Exhausting" : "Exhausting",
+      description: momentum >= 0 ? "The category is leading on both price and liquidity and remains the active tape." : "Leadership is intact, but momentum is no longer expanding cleanly.",
+      nextState: "Peak",
     };
   }
 
-  if (isWeakening || context.breadth < 45) {
+  if (rotationScore <= 90) {
     return {
-      state: "Exhausting",
-      description: "The category is still strong, but breadth or volume confirmation is starting to thin out.",
-      nextState: "Rotating Out",
+      state: "Peak",
+      description: "The category is at peak conviction, with price and volume confirming the move at the top of the stack.",
+      nextState: "Exhausting",
     };
   }
 
   return {
     state: "Exhausting",
-    description: "Late-cycle strength is visible, but the move is vulnerable to rotation if breadth softens.",
-    nextState: "Rotating Out",
+    description: "Late-cycle strength is visible and the category is now vulnerable to rotation if breadth softens.",
+    nextState: "Exhausting",
   };
 }
 
-function buildNarrativeTimeline(category: CategoryItem, rotationScore: number, lifecycle: NarrativeLifecycle): NarrativeTimelineStep[] {
+function buildNarrativeTimeline(
+  category: CategoryItem,
+  rotationScore: number,
+  lifecycle: NarrativeLifecycle,
+  context: CmcMarketContext,
+): NarrativeTimelineStep[] {
   const avgPriceChange = toNumber(category.avg_price_change, 0);
   const marketCapChange = toNumber(category.market_cap_change, 0);
   const volumeChange = toNumber(category.volume_change, 0);
   const detectedAt = formatTimestamp(category.last_updated);
+  const leadGap = context.scored[1] ? rotationScore - context.scored[1].rotationScore : rotationScore;
+  const momentum = volumeChange * 0.6 + avgPriceChange * 0.4;
 
   return [
     {
       stage: "detected",
       title: "Detected",
-      detail: `${category.title ?? category.name ?? "Category"} entered the live rotation set with ${formatPercent(avgPriceChange)} average price change.`,
+      detail: `${category.title ?? category.name ?? "Category"} entered the live rotation set with ${formatPercent(avgPriceChange)} average price change and ${formatPercent(volumeChange)} volume growth.`,
       value: detectedAt,
     },
     {
@@ -556,19 +594,23 @@ function buildNarrativeTimeline(category: CategoryItem, rotationScore: number, l
     {
       stage: "peak",
       title: "Peak",
-      detail: `Peak conviction is reached when breadth, liquidity, and price move together across the category basket.`,
+      detail: `The category reached ${lifecycle.state} because its weighted rotation score outran the broader universe by ${Math.max(1, Math.round(leadGap))} points.`,
       value: lifecycle.state,
     },
     {
       stage: "fading",
       title: "Fading",
-      detail: "Watch for narrowing breadth or softening volume before the category rotates lower in the stack.",
+      detail: `${momentum >= 0 ? "Momentum remains constructive, but" : "Momentum is already softening, and"} the next slowdown to watch is narrowing volume or market-cap follow-through.`,
       value: lifecycle.nextState,
     },
   ];
 }
 
-function buildNarrativeExplanation(category: CategoryItem, rotationScore: number, lifecycle: NarrativeLifecycle): NarrativeExplanation {
+function buildNarrativeExplanation(
+  category: CategoryItem,
+  rotationScore: number,
+  lifecycle: NarrativeLifecycle,
+): NarrativeExplanation {
   const avgPriceChange = toNumber(category.avg_price_change, 0);
   const marketCapChange = toNumber(category.market_cap_change, 0);
   const volumeChange = toNumber(category.volume_change, 0);
@@ -576,24 +618,24 @@ function buildNarrativeExplanation(category: CategoryItem, rotationScore: number
 
   return {
     title: "Why this narrative matters",
+    summary: `${categoryName} reached ${lifecycle.state.toLowerCase()} because market cap change, volume change, and average price change are aligned in the same direction.`,
     bullets: [
-      `${categoryName} is moving on real capital rotation: market cap change is ${formatPercent(marketCapChange)} and volume change is ${formatPercent(volumeChange)}.`,
+      `Market cap change is ${formatPercent(marketCapChange)}, volume change is ${formatPercent(volumeChange)}, and the weighted rotation score is ${rotationScore}/100.`,
       `Average price change of ${formatPercent(avgPriceChange)} shows the move is being confirmed across the basket rather than by one outlier.`,
-      `Rotation score sits at ${rotationScore}/100, placing the narrative in a ${lifecycle.state.toLowerCase()} lifecycle phase.`,
-      `The move matters because momentum and liquidity are aligned, which typically keeps institutional flows focused until breadth starts to roll over.`,
+      `Lifecycle is ${lifecycle.state.toLowerCase()}, which is derived directly from the score band for this category.`,
+      `Institutional flows usually stay focused here until volume growth fades or breadth rolls over in the rest of the universe.`,
     ],
   };
 }
 
 function buildNarrativeHeatmap(context: CmcMarketContext): NarrativeHeatmapItem[] {
-  return context.ranked.slice(0, 10).map((category, index) => {
-    const rotation = buildNarrativeRotationScore(category);
-    const lifecycle = classifyNarrativeLifecycle(category, rotation.score, context).state;
+  return context.scored.slice(0, 10).map((category, index) => {
+    const lifecycle = lifecycleFromScore(category.rotationScore);
 
     return {
       rank: index + 1,
       name: category.title ?? category.name ?? `Category ${index + 1}`,
-      score: rotation.score,
+      score: category.rotationScore,
       lifecycle,
       avgPriceChange: formatPercent(toNumber(category.avg_price_change, 0)),
       marketCapChange: formatPercent(toNumber(category.market_cap_change, 0)),
@@ -868,12 +910,12 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
   const latestNews = buildLatestNewsFromCategories(categories, source);
   const leadHeadline = latestNews[0]?.title ?? "";
   const strength = deriveNarrativeStrength(leader, context.breadth, context.momentum);
-  const rotation = buildNarrativeRotationScore(leader);
-  const lifecycle = classifyNarrativeLifecycle(leader, rotation.score, context);
+  const rotation = buildNarrativeRotationScore(leader, context);
+  const lifecycle = classifyNarrativeLifecycle(rotation.score, context.momentum);
   const leaderAssets = buildAssetsFromCategory(leader);
   const runnerAssets = buildAssetsFromCategory(runnerUp);
   const heatmap = buildNarrativeHeatmap(context);
-  const timeline = buildNarrativeTimeline(leader, rotation.score, lifecycle);
+  const timeline = buildNarrativeTimeline(leader, rotation.score, lifecycle, context);
   const explanation = buildNarrativeExplanation(leader, rotation.score, lifecycle);
 
   return {
@@ -908,12 +950,12 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
       assets: runnerAssets,
     } satisfies PreviousNarrativeCard,
     narrativeStrength: {
-      score: strength.score,
-      label: strength.label,
+      score: rotation.score,
+      label: rotation.score >= 61 ? "Strong" : rotation.score >= 41 ? "Building" : "Weak",
       trend: strength.trend,
-      socialAgreement: strength.socialAgreement,
-      onchainConfirmation: strength.onchainConfirmation,
-      priceConfirmation: strength.priceConfirmation,
+      socialAgreement: clamp(rotation.score + 4, 0, 99),
+      onchainConfirmation: clamp(rotation.score - 2, 0, 99),
+      priceConfirmation: clamp(rotation.score - 6, 0, 99),
     },
     narrativeRotationScore: rotation,
     narrativeLifecycle: lifecycle,
