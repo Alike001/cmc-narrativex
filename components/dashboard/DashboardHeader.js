@@ -16,7 +16,7 @@ export default function DashboardHeader() {
         <div className="flex items-center gap-5">
           <span className="hidden items-center gap-1.5 font-mono text-[11px] text-pulse-400 sm:flex">
             <span className="h-1.5 w-1.5 animate-pulseLine rounded-full bg-pulse-500" />
-            Live · updated 2 min ago
+            Mock API · MCP ready
           </span>
           <Link
             href="/"
