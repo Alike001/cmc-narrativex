@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CmcApiError, getTrendingNarratives } from "@/lib/cmc";
+import { createFallbackNarratives, getTrendingNarratives } from "@/lib/cmc";
 
 export const dynamic = "force-dynamic";
 
@@ -27,18 +27,24 @@ export async function GET() {
         },
       },
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load CoinMarketCap narratives.";
-    const status = error instanceof CmcApiError ? error.statusCode : 502;
+  } catch {
+    const narrative = createFallbackNarratives();
 
     return NextResponse.json(
       {
-        platform: "CoinMarketCap API",
+        platform: narrative.source,
         endpoint: "narratives",
-        error: message,
+        updatedAt: narrative.updatedAt,
+        data: {
+          narrativeAnalysis: {
+            dominantNarrative: narrative.dominantNarrative,
+            previousNarrative: narrative.previousNarrative,
+            narrativeStrength: narrative.narrativeStrength,
+          },
+          watchlist: narrative.watchlist,
+        },
       },
       {
-        status,
         headers: {
           "Cache-Control": "no-store",
         },

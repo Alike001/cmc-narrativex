@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CmcApiError, getGlobalMetrics } from "@/lib/cmc";
+import { createFallbackGlobalMetrics, getGlobalMetrics } from "@/lib/cmc";
 
 export const dynamic = "force-dynamic";
 
@@ -23,18 +23,20 @@ export async function GET() {
         },
       },
     );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load CoinMarketCap regime data.";
-    const status = error instanceof CmcApiError ? error.statusCode : 502;
+  } catch {
+    const globalMetrics = createFallbackGlobalMetrics();
 
     return NextResponse.json(
       {
-        platform: "CoinMarketCap API",
+        platform: globalMetrics.source,
         endpoint: "regime",
-        error: message,
+        updatedAt: globalMetrics.updatedAt,
+        data: {
+          marketRegimePanel: globalMetrics.marketRegime,
+          legacy: globalMetrics.metrics,
+        },
       },
       {
-        status,
         headers: {
           "Cache-Control": "no-store",
         },

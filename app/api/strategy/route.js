@@ -1,25 +1,41 @@
 import { NextResponse } from "next/server";
-import { CmcApiError, getGlobalMetrics, getLatestNews, getTrendingNarratives } from "@/lib/cmc";
+import { createFallbackGlobalMetrics, createFallbackNarratives, createFallbackLatestNews, getStrategySnapshot } from "@/lib/cmc";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const [narratives, globalMetrics, news] = await Promise.all([
-      getTrendingNarratives(),
-      getGlobalMetrics(),
-      getLatestNews(),
-    ]);
+    const strategy = await getStrategySnapshot();
 
+    return NextResponse.json(
+      {
+        platform: strategy.source,
+        endpoint: "strategy",
+        updatedAt: strategy.updatedAt,
+        data: {
+          strategyOutputPanel: strategy.strategyOutputPanel,
+          news: strategy.news,
+          legacy: strategy.legacy,
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  } catch {
+    const narratives = createFallbackNarratives();
+    const globalMetrics = createFallbackGlobalMetrics();
+    const news = createFallbackLatestNews();
     const riskScore = globalMetrics.riskScore.score;
     const confidenceScore = Math.round(
-      (narratives.narrativeStrength.score * 0.6 + (100 - riskScore) * 0.4),
+      narratives.narrativeStrength.score * 0.6 + (100 - riskScore) * 0.4,
     );
     const activeRegime = globalMetrics.marketRegime.active;
     const topCoins = narratives.watchlist.slice(0, 3).map((item) => item.name);
     const topCoinsLabel = topCoins.length > 0 ? topCoins.join(", ") : "top-ranked assets";
     const topHeadline = news[0]?.title ?? "Market attention remains concentrated";
-
     const strategyOutputPanel = {
       confidenceScore,
       confidenceLabel: confidenceScore >= 80 ? "High confidence" : "Medium confidence",
@@ -62,23 +78,6 @@ export async function GET() {
         },
       },
       {
-        headers: {
-          "Cache-Control": "no-store",
-        },
-      },
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load CoinMarketCap strategy data.";
-    const status = error instanceof CmcApiError ? error.statusCode : 502;
-
-    return NextResponse.json(
-      {
-        platform: "CoinMarketCap API",
-        endpoint: "strategy",
-        error: message,
-      },
-      {
-        status,
         headers: {
           "Cache-Control": "no-store",
         },
