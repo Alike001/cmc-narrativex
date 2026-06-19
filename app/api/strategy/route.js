@@ -48,6 +48,7 @@ export async function GET() {
         updatedAt: globalMetrics.updatedAt,
         data: {
           strategyOutputPanel,
+          news: news.slice(0, 3),
           legacy: {
             confidenceScore: confidenceScore / 100,
             strategyType: "narrative-following",

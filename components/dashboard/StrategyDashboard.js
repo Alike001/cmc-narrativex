@@ -62,6 +62,21 @@ function Metric({ label, value }) {
   );
 }
 
+function buildWhyThisStrategy(snapshot) {
+  const narrative = snapshot.narratives.dominantNarrative;
+  const regime = snapshot.regime;
+  const risk = snapshot.risk;
+  const newsItem = snapshot.news?.[0];
+  const newsTitle = newsItem?.title ?? "recent market headlines";
+
+  return [
+    `Narrative strength is ${narrative.strength}/100, with ${narrative.momentum.toLowerCase()} momentum and strong agreement across social, on-chain, and price signals.`,
+    `The market is in a ${regime.active.toLowerCase()} regime, and the supporting breadth, liquidity, and sentiment backdrop still favors trend continuation.`,
+    `Risk is ${risk.label.toLowerCase()} at ${risk.score}/100, which supports a constructive stance but still argues for disciplined sizing.`,
+    `Latest news flow is centered on ${newsTitle}, reinforcing the same theme instead of fighting it.`,
+  ];
+}
+
 function NarrativeAnalysisPanel({ narratives, watchlist }) {
   const dominant = narratives.dominantNarrative;
   const previous = narratives.previousNarrative;
@@ -315,6 +330,7 @@ function AiStrategyOutputPanel({ snapshot }) {
   const riskLabel = snapshot.risk.label;
   const recommendedStrategy = snapshot.strategy.thesis;
   const confidenceScore = snapshot.strategy.confidenceScore;
+  const reasons = buildWhyThisStrategy(snapshot);
 
   return (
     <WidgetCard
@@ -357,6 +373,18 @@ function AiStrategyOutputPanel({ snapshot }) {
                 </p>
               </div>
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow">Why this strategy?</p>
+            <ul className="mt-3 space-y-3">
+              {reasons.map((reason) => (
+                <li key={reason} className="flex gap-2 text-sm leading-relaxed text-mist-300">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-pulse-500" />
+                  <span>{reason}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </div>
 
