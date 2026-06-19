@@ -8,7 +8,7 @@ export default function Navbar() {
           <span className="h-2.5 w-2.5 rounded-full bg-signal-400" />
         </span>
         <span className="font-display text-[15px] font-semibold tracking-tight text-mist-100">
-          CMC NarrativeX
+          CMC NarrativeX Agent
         </span>
       </Link>
 

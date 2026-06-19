@@ -19,8 +19,8 @@ export default function Hero() {
             </span>
           </h1>
           <p className="mt-6 max-w-md text-[15px] leading-relaxed text-mist-500">
-            CMC NarrativeX reads social volume, on-chain activity, and price action together to
-            name the dominant crypto narrative in real time — then scores its confidence, reads
+            CMC NarrativeX Agent reads social volume, on-chain activity, and price action together
+            to name the dominant crypto narrative in real time - then scores its confidence, reads
             the market regime, and turns it into a strategy you can act on.
           </p>
 

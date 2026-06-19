@@ -2,9 +2,9 @@ import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import StrategyDashboard from "@/components/dashboard/StrategyDashboard";
 
 export const metadata = {
-  title: "Strategy Board — CMC NarrativeX",
+  title: "Strategy Board — CMC NarrativeX Agent",
   description:
-    "Live mock strategy board for narrative analysis, market regime, risk, and execution planning.",
+    "AI Narrative Rotation Agent for narrative analysis, market regime, risk, and portfolio decisioning.",
 };
 
 export default function DashboardPage() {

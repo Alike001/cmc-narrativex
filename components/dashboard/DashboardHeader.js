@@ -3,13 +3,18 @@ import Link from "next/link";
 export default function DashboardHeader() {
   return (
     <header className="border-b border-white/5 bg-ink-900/80 backdrop-blur">
-      <div className="container-shell flex items-center justify-between py-5">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-signal-500/15 ring-1 ring-signal-500/30">
+      <div className="container-shell flex items-center justify-between gap-4 py-5">
+        <Link href="/" className="flex items-start gap-3">
+          <span className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg bg-signal-500/15 ring-1 ring-signal-500/30">
             <span className="h-2.5 w-2.5 rounded-full bg-signal-400" />
           </span>
-          <span className="font-display text-[15px] font-semibold tracking-tight text-mist-100">
-            CMC NarrativeX
+          <span className="flex flex-col">
+            <span className="font-display text-[15px] font-semibold tracking-tight text-mist-100 sm:text-base">
+              CMC NarrativeX Agent
+            </span>
+            <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-pulse-400">
+              AI Narrative Rotation Agent
+            </span>
           </span>
         </Link>
 

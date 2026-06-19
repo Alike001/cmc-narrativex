@@ -9,12 +9,12 @@ export default function Footer() {
             <span className="h-2 w-2 rounded-full bg-signal-400" />
           </span>
           <span className="font-display text-sm font-semibold text-mist-100">
-            CMC NarrativeX
+            CMC NarrativeX Agent
           </span>
         </div>
         <p className="text-center text-xs text-mist-700 sm:text-left">
           Informational only — not financial advice. © {new Date().getFullYear()} CMC
-          NarrativeX.
+          NarrativeX Agent.
         </p>
         <Link href="/dashboard" className="text-xs text-mist-500 transition hover:text-mist-100">
           Open dashboard →

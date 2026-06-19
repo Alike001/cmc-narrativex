@@ -9,6 +9,7 @@ import {
   getCoinMarketCapMcpPlan,
   loadStrategyPlatformSnapshot,
 } from "@/lib/strategy-platform";
+import { buildNarrativeRotationAgent } from "@/lib/narrative-agent";
 
 const REGIME_TONES = {
   Bull: "signal",
@@ -33,6 +34,7 @@ function SkeletonBlock({ className = "" }) {
 function LoadingState() {
   return (
     <div className="grid gap-5 lg:grid-cols-4">
+      <SkeletonBlock className="h-96 lg:col-span-4" />
       <SkeletonBlock className="h-56 lg:col-span-2" />
       <SkeletonBlock className="h-56 lg:col-span-2" />
       <SkeletonBlock className="h-72 lg:col-span-2" />
@@ -67,6 +69,241 @@ function Metric({ label, value }) {
       <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">{label}</p>
       <p className="mt-1.5 font-mono text-sm font-semibold text-mist-100">{value}</p>
     </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-white/5 bg-ink-850/80 px-3 py-2.5 text-sm text-mist-100 outline-none transition focus:border-signal-400"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function NumberField({ label, value, onChange, min = 0, step = 1 }) {
+  return (
+    <label className="block space-y-2">
+      <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500">{label}</span>
+      <input
+        type="number"
+        min={min}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="w-full rounded-xl border border-white/5 bg-ink-850/80 px-3 py-2.5 font-mono text-sm text-mist-100 outline-none transition focus:border-signal-400"
+      />
+    </label>
+  );
+}
+
+function NarrativeRotationAgentPanel({ snapshot }) {
+  const [riskProfile, setRiskProfile] = useState("Moderate");
+  const [holdingPeriod, setHoldingPeriod] = useState("1 Week");
+  const [capitalAmount, setCapitalAmount] = useState(50000);
+  const agent = buildNarrativeRotationAgent(snapshot, {
+    riskProfile,
+    holdingPeriod,
+    capitalAmount,
+  });
+
+  const dominantAllocation = agent.recommendedAllocation[0];
+  const secondaryAllocation = agent.recommendedAllocation[1];
+  const tertiaryAllocation = agent.recommendedAllocation[2];
+  const cashAllocation = agent.recommendedAllocation[3];
+
+  return (
+    <WidgetCard
+      eyebrow="Narrative rotation agent"
+      title="AI Narrative Rotation Agent"
+      headerRight={
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="pulse">{agent.confidenceScore}/100 confidence</Badge>
+          <Badge tone="signal">{riskProfile}</Badge>
+          <Badge tone="neutral">{holdingPeriod}</Badge>
+        </div>
+      }
+      className="lg:col-span-4"
+    >
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow text-signal-400">Decision engine</p>
+            <h2 className="mt-2 font-display text-2xl font-semibold text-mist-100 sm:text-[28px]">
+              {agent.dominantNarrative}
+            </h2>
+            <p className="mt-3 text-sm leading-relaxed text-mist-300">
+              The agent converts live narrative strength, market regime, risk, and category momentum
+              into a portfolio decision set for the selected risk profile and holding period.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-3">
+            <SelectField
+              label="Risk Profile"
+              value={riskProfile}
+              onChange={setRiskProfile}
+              options={["Conservative", "Moderate", "Aggressive"]}
+            />
+            <SelectField
+              label="Holding Period"
+              value={holdingPeriod}
+              onChange={setHoldingPeriod}
+              options={["1 Week", "2 Weeks", "1 Month", "3 Months"]}
+            />
+            <NumberField
+              label="Capital Amount (USD)"
+              value={capitalAmount}
+              onChange={(value) => setCapitalAmount(Math.max(0, Number(value) || 0))}
+              min={0}
+              step={1000}
+            />
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Metric label="Dominant Narrative" value={agent.dominantNarrative} />
+            <Metric label="Confidence Score" value={`${agent.confidenceScore}/100`} />
+            <Metric label="Capital" value={capitalAmount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })} />
+            <Metric label="Regime" value={snapshot.regime.active} />
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="label-eyebrow">Confidence meter</p>
+                <p className="mt-2 text-sm text-mist-300">
+                  Confidence reflects narrative strength, market regime, risk score, and the current
+                  signal gap between the top categories.
+                </p>
+              </div>
+              <Badge tone={agent.confidenceScore >= 80 ? "pulse" : agent.confidenceScore >= 60 ? "signal" : "amber"}>
+                {snapshot.risk.label} risk
+              </Badge>
+            </div>
+            <div className="mt-4 flex items-center gap-5">
+              <RadialGauge
+                score={agent.confidenceScore}
+                tone={agent.confidenceScore >= 80 ? "pulse" : agent.confidenceScore >= 60 ? "signal" : "amber"}
+                size={128}
+                strokeWidth={10}
+              />
+              <div className="space-y-2">
+                <p className="font-display text-2xl font-semibold text-mist-100">
+                  {agent.dominantNarrative}
+                </p>
+                <p className="text-sm leading-relaxed text-mist-300">
+                  {snapshot.narratives.narrativeExplanation?.summary}
+                </p>
+                <div className="flex flex-wrap gap-2 pt-1">
+                  <Badge tone="signal">{snapshot.regime.active}</Badge>
+                  <Badge tone="neutral">{snapshot.narratives.narrativeLifecycle?.state}</Badge>
+                  <Badge tone="pulse">{snapshot.narratives.narrativeRotationScore?.score}/100 rotation</Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow">Reasoning Summary</p>
+            <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.reasoningSummary}</p>
+          </div>
+        </div>
+
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="label-eyebrow">Recommended Allocation</p>
+              <Badge tone="signal">{agent.profileLabel} / {agent.holdingLabel}</Badge>
+            </div>
+            <div className="mt-4 space-y-4">
+              {agent.recommendedAllocation.map((item, index) => {
+                const isCash = item.name === "Cash";
+                const tone =
+                  index === 0 ? "pulse" : isCash ? "neutral" : index === 1 ? "signal" : "amber";
+                const amount = capitalAmount > 0 ? item.amount : 0;
+
+                return (
+                  <div key={item.name}>
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="text-mist-400">{item.name}</span>
+                      <span className="font-mono text-mist-100">
+                        {item.percent}%{capitalAmount > 0 ? ` · ${amount.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 })}` : ""}
+                      </span>
+                    </div>
+                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-800">
+                      <div
+                        className={`h-full rounded-full ${
+                          tone === "pulse"
+                            ? "bg-pulse-500"
+                            : tone === "signal"
+                              ? "bg-signal-500"
+                              : tone === "amber"
+                                ? "bg-amber-500"
+                                : "bg-mist-500"
+                        }`}
+                        style={{ width: `${item.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Metric label="Top Allocation" value={`${dominantAllocation?.name ?? "Cash"} ${dominantAllocation?.percent ?? 0}%`} />
+              <Metric label="Cash Reserve" value={`${cashAllocation?.percent ?? 0}%`} />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+              <p className="label-eyebrow">Entry Strategy</p>
+              <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.entryStrategy}</p>
+            </div>
+            <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+              <p className="label-eyebrow">Exit Strategy</p>
+              <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.exitStrategy}</p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow">Suggested Watchlist</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {agent.suggestedWatchlist.map((asset) => (
+                <Badge key={asset} tone="signal">
+                  {asset}
+                </Badge>
+              ))}
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <Metric label="Secondary" value={secondaryAllocation ? `${secondaryAllocation.name} ${secondaryAllocation.percent}%` : "N/A"} />
+              <Metric label="Tertiary" value={tertiaryAllocation ? `${tertiaryAllocation.name} ${tertiaryAllocation.percent}%` : "N/A"} />
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow">Risk Notes</p>
+            <ul className="mt-3 space-y-3">
+              {agent.riskNotes.map((note) => (
+                <li key={note} className="flex gap-2 text-sm leading-relaxed text-mist-300">
+                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-pulse-500" />
+                  <span>{note}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </WidgetCard>
   );
 }
 
@@ -729,22 +966,24 @@ export default function StrategyDashboard() {
 
   return (
     <section className="container-shell py-10">
+      <NarrativeRotationAgentPanel snapshot={snapshot} />
+
       <div className="rounded-[28px] border border-white/5 bg-ink-850/70 px-6 py-6 shadow-card sm:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="max-w-3xl">
-            <span className="label-eyebrow text-signal-400">Strategy platform</span>
-            <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight text-mist-100 sm:text-4xl">
-              CMC NarrativeX AI strategy board
-            </h1>
+            <span className="label-eyebrow text-signal-400">Strategy snapshot</span>
+            <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight text-mist-100 sm:text-4xl">
+              Live portfolio posture
+            </h2>
             <p className="mt-3 text-sm leading-relaxed text-mist-500">
-              The platform now loads a normalized strategy snapshot from the mock API layer and
-              is structured so the data source can move to CoinMarketCap MCP without changing the
-              dashboard panels.
+              Live narrative, regime, and risk readings feed the decision engine above and this
+              snapshot below without changing the dashboard structure.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Badge tone="pulse">{snapshot.source}</Badge>
+            <Badge tone="pulse">Agent mode</Badge>
+            <Badge tone="signal">{snapshot.source}</Badge>
             <Badge tone="signal">{mcpPlan.provider}</Badge>
             <Badge tone="neutral">
               Updated {updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
