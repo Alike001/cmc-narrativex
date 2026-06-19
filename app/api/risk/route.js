@@ -1,40 +1,82 @@
 import { NextResponse } from "next/server";
-import { riskScore } from "@/lib/mockData";
+import { CmcApiError, getGlobalMetrics } from "@/lib/cmc";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const riskScorePanel = {
-    score: riskScore.score,
-    label: riskScore.score < 35 ? "Low" : riskScore.score < 70 ? "Medium" : "High",
-    interpretation:
-      riskScore.score < 50
-        ? "Position sizing can stay constructive, but leverage should remain contained."
-        : "Risk is elevated enough to justify tighter stops and smaller adds.",
-    factors: riskScore.factors,
-    thresholds: {
-      low: 30,
-      medium: 60,
-      high: 80,
-    },
-  };
-
-  return NextResponse.json({
-    platform: "CMC NarrativeX",
-    endpoint: "risk",
-    updatedAt: new Date().toISOString(),
-    data: {
-      riskScorePanel,
-      legacy: {
-        score: riskScore.score,
-        label: riskScore.label,
-        description: riskScore.description,
-        factors: riskScore.factors,
+  try {
+    const globalMetrics = await getGlobalMetrics();
+    const panel = {
+      score: globalMetrics.riskScore.score,
+      label: globalMetrics.riskScore.label,
+      description: globalMetrics.riskScore.interpretation,
+      factors: [
+        {
+          name: "Fear and Greed",
+          value: globalMetrics.metrics.fearAndGreedValue,
+          tone: globalMetrics.metrics.fearAndGreedValue > 60 ? "pulse" : "amber",
+        },
+        {
+          name: "Altcoin Season",
+          value: globalMetrics.metrics.altcoinSeasonIndex,
+          tone: globalMetrics.metrics.altcoinSeasonIndex > 75 ? "pulse" : "amber",
+        },
+        {
+          name: "BTC Dominance",
+          value: Math.round(globalMetrics.metrics.btcDominance),
+          tone: globalMetrics.metrics.btcDominance > 60 ? "amber" : "pulse",
+        },
+        {
+          name: "Market Breadth",
+          value: Math.min(100, Math.round((globalMetrics.metrics.activeCryptocurrencies / 5000) * 100)),
+          tone: "pulse",
+        },
+      ],
+      thresholds: {
+        low: 30,
+        medium: 60,
+        high: 80,
       },
-    },
-  }, {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+      interpretation: globalMetrics.riskScore.interpretation,
+    };
+
+    return NextResponse.json(
+      {
+        platform: globalMetrics.source,
+        endpoint: "risk",
+        updatedAt: globalMetrics.updatedAt,
+        data: {
+          riskScorePanel: panel,
+          legacy: {
+            score: panel.score,
+            label: panel.label,
+            description: panel.description,
+            factors: panel.factors,
+          },
+        },
+      },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load CoinMarketCap risk data.";
+    const status = error instanceof CmcApiError ? error.statusCode : 502;
+
+    return NextResponse.json(
+      {
+        platform: "CoinMarketCap API",
+        endpoint: "risk",
+        error: message,
+      },
+      {
+        status,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
 }

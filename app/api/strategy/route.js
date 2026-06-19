@@ -1,49 +1,87 @@
 import { NextResponse } from "next/server";
-import { generatedStrategy } from "@/lib/mockData";
+import { CmcApiError, getGlobalMetrics, getLatestNews, getTrendingNarratives } from "@/lib/cmc";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const strategyOutputPanel = {
-    confidenceScore: 78,
-    confidenceLabel: "High confidence",
-    entryRecommendation:
-      "Scale into AI-compute leaders on pullbacks toward the 4h trend average, then add only after BTC reclaims local resistance.",
-    exitRecommendation:
-      "Reduce exposure if narrative strength drops below 70 or if the regime flips to Sideways or Bear.",
-    positionSizing:
-      "Start at 0.75x base size. Expand toward 1.25x only when social, on-chain, and price confirmation stay aligned.",
-    thesis:
-      "Lean into the AI-agent narrative while it remains dominant, but respect the fact that regime support is improving rather than euphoric.",
-    watchlist: [
-      "FET",
-      "TAO",
-      "RNDR",
-      "AKT",
-    ],
-  };
+  try {
+    const [narratives, globalMetrics, news] = await Promise.all([
+      getTrendingNarratives(),
+      getGlobalMetrics(),
+      getLatestNews(),
+    ]);
 
-  return NextResponse.json({
-    platform: "CMC NarrativeX",
-    endpoint: "strategy",
-    updatedAt: new Date().toISOString(),
-    data: {
-      strategyOutputPanel,
-      legacy: {
-        ...generatedStrategy,
-        strategyType: "narrative-following",
-        confidenceScore: 0.78,
-        positionBias: "selective long",
-        riskNotes: [
-          "Prefer entries on pullbacks rather than chasing momentum spikes.",
-          "Use lower size if funding accelerates across AI-linked perps.",
-          "Rotate out of lagging RWA exposure until share-of-voice recovers.",
-        ],
+    const riskScore = globalMetrics.riskScore.score;
+    const confidenceScore = Math.round(
+      (narratives.narrativeStrength.score * 0.6 + (100 - riskScore) * 0.4),
+    );
+    const activeRegime = globalMetrics.marketRegime.active;
+    const topCoins = narratives.watchlist.slice(0, 3).map((item) => item.name);
+    const topCoinsLabel = topCoins.length > 0 ? topCoins.join(", ") : "top-ranked assets";
+    const topHeadline = news[0]?.title ?? "Market attention remains concentrated";
+
+    const strategyOutputPanel = {
+      confidenceScore,
+      confidenceLabel: confidenceScore >= 80 ? "High confidence" : "Medium confidence",
+      entryRecommendation:
+        activeRegime === "Panic"
+          ? "Wait for confirmation before adding exposure; only scale in after volatility cools and market breadth stabilizes."
+          : `Scale into ${topCoinsLabel} on pullbacks while the ${activeRegime.toLowerCase()} regime stays intact.`,
+      exitRecommendation:
+        activeRegime === "Euphoria"
+          ? "Take profits faster and tighten stops as speculative heat expands."
+          : "Exit if the narrative falls out of the top rotation list or the regime flips to Bear or Panic.",
+      positionSizing:
+        confidenceScore >= 80
+          ? "1.0x to 1.25x base size"
+          : confidenceScore >= 65
+            ? "0.75x to 1.0x base size"
+            : "0.5x to 0.75x base size",
+      thesis: `${topHeadline}. Keep the portfolio aligned with ${narratives.dominantNarrative.name} while global sentiment remains ${globalMetrics.metrics.fearAndGreedLabel.toLowerCase()}.`,
+      watchlist: topCoins,
+    };
+
+    return NextResponse.json(
+      {
+        platform: globalMetrics.source,
+        endpoint: "strategy",
+        updatedAt: globalMetrics.updatedAt,
+        data: {
+          strategyOutputPanel,
+          legacy: {
+            confidenceScore: confidenceScore / 100,
+            strategyType: "narrative-following",
+            positionBias: activeRegime === "Bear" || activeRegime === "Panic" ? "defensive" : "selective long",
+            riskNotes: [
+              `Narrative strength sits at ${narratives.narrativeStrength.score}/100.`,
+              `Fear and Greed is ${globalMetrics.metrics.fearAndGreedValue} (${globalMetrics.metrics.fearAndGreedLabel}).`,
+              topHeadline,
+            ],
+          },
+        },
       },
-    },
-  }, {
-    headers: {
-      "Cache-Control": "no-store",
-    },
-  });
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to load CoinMarketCap strategy data.";
+    const status = error instanceof CmcApiError ? error.statusCode : 502;
+
+    return NextResponse.json(
+      {
+        platform: "CoinMarketCap API",
+        endpoint: "strategy",
+        error: message,
+      },
+      {
+        status,
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
+  }
 }
