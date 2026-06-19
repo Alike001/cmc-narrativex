@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  scrollbar-color: #2a3245 transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: #070a0f;
+  color: #e8eaed;
+}
+
+/* visible keyboard focus everywhere */
+:focus-visible {
+  outline: 2px solid #4f7cff;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: rgba(79, 124, 255, 0.35);
+  color: #e8eaed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .container-shell {
+    @apply mx-auto w-full max-w-[1240px] px-5 sm:px-8;
+  }
+
+  .label-eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.18em] text-mist-500;
+  }
+
+  .panel {
+    @apply relative rounded-2xl border border-white/5 bg-ink-800 bg-card-sheen shadow-card;
+  }
+}
