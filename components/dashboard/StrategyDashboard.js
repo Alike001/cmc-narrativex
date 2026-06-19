@@ -29,6 +29,7 @@ function LoadingState() {
       <SkeletonBlock className="h-56 lg:col-span-2" />
       <SkeletonBlock className="h-72 lg:col-span-2" />
       <SkeletonBlock className="h-72 lg:col-span-2" />
+      <SkeletonBlock className="h-64 lg:col-span-4" />
     </div>
   );
 }
@@ -307,6 +308,100 @@ function StrategyOutputPanel({ strategy }) {
   );
 }
 
+function AiStrategyOutputPanel({ snapshot }) {
+  const dominantNarrative = snapshot.narratives.dominantNarrative.name;
+  const marketRegime = snapshot.regime.active;
+  const riskScore = snapshot.risk.score;
+  const riskLabel = snapshot.risk.label;
+  const recommendedStrategy = snapshot.strategy.thesis;
+  const confidenceScore = snapshot.strategy.confidenceScore;
+
+  return (
+    <WidgetCard
+      eyebrow="AI strategy output"
+      title="CMC strategy synthesis"
+      headerRight={<Badge tone="pulse">{confidenceScore}/100 confidence</Badge>}
+      className="lg:col-span-4"
+    >
+      <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <Metric label="Dominant Narrative" value={dominantNarrative} />
+            <Metric label="Market Regime" value={marketRegime} />
+            <Metric label="Risk Score" value={`${riskScore}/100 (${riskLabel})`} />
+            <Metric label="Confidence Score" value={`${confidenceScore}/100`} />
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="label-eyebrow">Recommended Strategy</p>
+            <p className="mt-2 text-sm leading-relaxed text-mist-300">
+              {recommendedStrategy}
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Entry</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
+                  {snapshot.strategy.entryRecommendation}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Exit</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
+                  {snapshot.strategy.exitRecommendation}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Sizing</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
+                  {snapshot.strategy.positionSizing}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="label-eyebrow">Service layer snapshot</p>
+              <h3 className="mt-2 font-display text-lg font-semibold text-mist-100">
+                CoinMarketCap-backed
+              </h3>
+            </div>
+            <Badge tone="signal">Live mock</Badge>
+          </div>
+          <div className="mt-4 space-y-3">
+            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                Dominant Narrative
+              </p>
+              <p className="mt-1.5 text-sm font-medium text-mist-100">
+                {snapshot.narratives.dominantNarrative.summary}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                Market Regime
+              </p>
+              <p className="mt-1.5 text-sm font-medium text-mist-100">
+                {snapshot.regime.summary}
+              </p>
+            </div>
+            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                Risk Score
+              </p>
+              <p className="mt-1.5 text-sm font-medium text-mist-100">
+                {snapshot.risk.description}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </WidgetCard>
+  );
+}
+
 export default function StrategyDashboard() {
   const [snapshot, setSnapshot] = useState(null);
   const [status, setStatus] = useState("loading");
@@ -390,6 +485,7 @@ export default function StrategyDashboard() {
         <MarketRegimePanel regime={snapshot.regime} />
         <RiskScorePanel risk={snapshot.risk} />
         <StrategyOutputPanel strategy={snapshot.strategy} />
+        <AiStrategyOutputPanel snapshot={snapshot} />
       </div>
     </section>
   );
