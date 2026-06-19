@@ -18,6 +18,14 @@ const REGIME_TONES = {
   Euphoria: "pulse",
 };
 
+const LIFECYCLE_TONES = {
+  Emerging: "amber",
+  Accelerating: "signal",
+  Dominant: "pulse",
+  Exhausting: "danger",
+  "Rotating Out": "neutral",
+};
+
 function SkeletonBlock({ className = "" }) {
   return <div className={`animate-pulse rounded-xl bg-white/5 ${className}`} />;
 }
@@ -166,6 +174,160 @@ function NarrativeAnalysisPanel({ narratives, watchlist }) {
               {item.rank}. {item.name}
             </Badge>
           ))}
+        </div>
+      </div>
+    </WidgetCard>
+  );
+}
+
+function NarrativeRotationPanel({ narratives }) {
+  const dominant = narratives.dominantNarrative;
+  const rotation = narratives.narrativeRotationScore ?? {
+    score: narratives.narrativeStrength.score,
+    label: narratives.narrativeStrength.label,
+    drivers: [],
+  };
+  const lifecycle = narratives.narrativeLifecycle ?? {
+    state: "Accelerating",
+    description: "Live category data is still confirming the trend.",
+    nextState: "Dominant",
+  };
+
+  return (
+    <WidgetCard
+      eyebrow="Narrative rotation"
+      title="Rotation score"
+      headerRight={<Badge tone={LIFECYCLE_TONES[lifecycle.state] ?? "neutral"}>{lifecycle.state}</Badge>}
+      className="lg:col-span-2"
+    >
+      <div className="grid gap-5 sm:grid-cols-[auto_1fr] sm:items-center">
+        <div className="flex justify-center">
+          <RadialGauge
+            score={rotation.score}
+            tone={rotation.score >= 80 ? "pulse" : rotation.score >= 60 ? "signal" : "amber"}
+            size={120}
+            strokeWidth={10}
+          />
+        </div>
+
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone={rotation.score >= 80 ? "pulse" : rotation.score >= 60 ? "signal" : "amber"}>
+              {rotation.score}/100
+            </Badge>
+            <Badge tone="neutral">{rotation.label}</Badge>
+          </div>
+          <p className="text-sm leading-relaxed text-mist-300">{lifecycle.description}</p>
+          <div className="space-y-3">
+            {rotation.drivers.map((driver) => (
+              <div key={driver.label} className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-mist-500">{driver.label}</span>
+                  <span className="font-mono text-mist-300">{driver.value}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+        <p className="label-eyebrow">Current narrative</p>
+        <p className="mt-2 text-sm leading-relaxed text-mist-300">{dominant.summary}</p>
+      </div>
+    </WidgetCard>
+  );
+}
+
+function NarrativeHeatmapPanel({ heatmap }) {
+  return (
+    <WidgetCard
+      eyebrow="Narrative heatmap"
+      title="Top 10 categories"
+      headerRight={<Badge tone="signal">{heatmap.length} categories</Badge>}
+      className="lg:col-span-2"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        {heatmap.slice(0, 10).map((item) => (
+          <div
+            key={item.name}
+            className="rounded-2xl border border-white/5 p-3"
+            style={{
+              background: `linear-gradient(180deg, rgba(19, 22, 32, 0.92), rgba(19, 22, 32, 0.7)), rgba(255,255,255,${Math.max(
+                0.02,
+                Math.min(0.18, item.score / 700),
+              )})`,
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">#{item.rank}</p>
+                <p className="mt-1 font-display text-sm font-semibold text-mist-100">{item.name}</p>
+              </div>
+              <Badge tone={item.lifecycle === "Dominant" ? "pulse" : item.lifecycle === "Exhausting" ? "danger" : "neutral"}>
+                {item.score}
+              </Badge>
+            </div>
+            <p className="mt-3 text-xs leading-relaxed text-mist-300">
+              {item.lifecycle} {item.avgPriceChange} / {item.marketCapChange} / {item.volumeChange}
+            </p>
+          </div>
+        ))}
+      </div>
+    </WidgetCard>
+  );
+}
+
+function NarrativeTimelinePanel({ timeline }) {
+  return (
+    <WidgetCard
+      eyebrow="Narrative timeline"
+      title="Lifecycle path"
+      headerRight={<Badge tone="neutral">4 stages</Badge>}
+      className="lg:col-span-2"
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {timeline.map((step, index) => (
+          <div key={step.stage} className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+              {String(index + 1).padStart(2, "0")} {step.title}
+            </p>
+            <p className="mt-2 text-sm font-medium text-mist-100">{step.value}</p>
+            <p className="mt-2 text-xs leading-relaxed text-mist-300">{step.detail}</p>
+          </div>
+        ))}
+      </div>
+    </WidgetCard>
+  );
+}
+
+function NarrativeExplanationPanel({ explanation }) {
+  const bullets = explanation?.bullets ?? [];
+
+  return (
+    <WidgetCard
+      eyebrow="AI explanation"
+      title={explanation?.title ?? "Why this narrative matters"}
+      headerRight={<Badge tone="pulse">Institutional read</Badge>}
+      className="lg:col-span-4"
+    >
+      <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr]">
+        <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+          <ul className="space-y-3">
+            {bullets.map((bullet) => (
+              <li key={bullet} className="flex gap-2 text-sm leading-relaxed text-mist-300">
+                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-pulse-500" />
+                <span>{bullet}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+          <p className="label-eyebrow">Interpretation</p>
+          <p className="mt-2 text-sm leading-relaxed text-mist-300">
+            The narrative is only meaningful when category-level momentum, volume growth, and market-cap
+            expansion all point in the same direction. This panel keeps the read concise enough for
+            portfolio review while still anchored to live category data.
+          </p>
         </div>
       </div>
     </WidgetCard>
@@ -510,8 +672,12 @@ export default function StrategyDashboard() {
           narratives={snapshot.narratives}
           watchlist={snapshot.narrativeWatchlist}
         />
+        <NarrativeRotationPanel narratives={snapshot.narratives} />
         <MarketRegimePanel regime={snapshot.regime} />
         <RiskScorePanel risk={snapshot.risk} />
+        <NarrativeHeatmapPanel heatmap={snapshot.narrativeHeatmap ?? []} />
+        <NarrativeTimelinePanel timeline={snapshot.narratives.narrativeTimeline ?? []} />
+        <NarrativeExplanationPanel explanation={snapshot.narratives.narrativeExplanation} />
         <StrategyOutputPanel strategy={snapshot.strategy} />
         <AiStrategyOutputPanel snapshot={snapshot} />
       </div>

@@ -41,6 +41,42 @@ type NarrativeStrength = {
   priceConfirmation: number;
 };
 
+type NarrativeRotationScore = {
+  score: number;
+  label: "Weak" | "Building" | "Strong" | "Overheated";
+  drivers: Array<{ label: string; value: string }>;
+};
+
+type NarrativeLifecycleState = "Emerging" | "Accelerating" | "Dominant" | "Exhausting" | "Rotating Out";
+
+type NarrativeLifecycle = {
+  state: NarrativeLifecycleState;
+  description: string;
+  nextState: NarrativeLifecycleState;
+};
+
+type NarrativeTimelineStep = {
+  stage: "detected" | "strengthening" | "peak" | "fading";
+  title: string;
+  detail: string;
+  value: string;
+};
+
+type NarrativeHeatmapItem = {
+  rank: number;
+  name: string;
+  score: number;
+  lifecycle: NarrativeLifecycleState;
+  avgPriceChange: string;
+  marketCapChange: string;
+  volumeChange: string;
+};
+
+type NarrativeExplanation = {
+  title: string;
+  bullets: string[];
+};
+
 type NarrativeCard = {
   name: string;
   status: string;
@@ -432,6 +468,140 @@ function deriveNarrativeStrength(category: CategoryItem, breadth: number, moment
   };
 }
 
+function buildNarrativeRotationScore(category: CategoryItem): NarrativeRotationScore {
+  const avgPriceChange = toNumber(category.avg_price_change, 0);
+  const marketCapChange = toNumber(category.market_cap_change, 0);
+  const volumeChange = toNumber(category.volume_change, 0);
+  const score = clamp(Math.round(50 + avgPriceChange * 2.3 + marketCapChange * 1.8 + volumeChange * 1.6), 0, 100);
+
+  return {
+    score,
+    label: score >= 82 ? "Overheated" : score >= 65 ? "Strong" : score >= 40 ? "Building" : "Weak",
+    drivers: [
+      { label: "Market cap change", value: formatPercent(marketCapChange) },
+      { label: "Volume change", value: formatPercent(volumeChange) },
+      { label: "Avg. price change", value: formatPercent(avgPriceChange) },
+    ],
+  };
+}
+
+function classifyNarrativeLifecycle(
+  category: CategoryItem,
+  rotationScore: number,
+  context: CmcMarketContext,
+): NarrativeLifecycle {
+  const avgPriceChange = toNumber(category.avg_price_change, 0);
+  const volumeChange = toNumber(category.volume_change, 0);
+  const marketCapChange = toNumber(category.market_cap_change, 0);
+  const isWeakening = volumeChange < 0 || marketCapChange < 0 || avgPriceChange < 0;
+
+  if (rotationScore < 35) {
+    return {
+      state: isWeakening ? "Rotating Out" : "Emerging",
+      description: "Early rotation is visible, but capital has not yet broadened into a durable trend.",
+      nextState: "Accelerating",
+    };
+  }
+
+  if (rotationScore < 60) {
+    return {
+      state: "Accelerating",
+      description: "Momentum is improving and liquidity is starting to confirm the narrative.",
+      nextState: "Dominant",
+    };
+  }
+
+  if (rotationScore < 80) {
+    return {
+      state: "Dominant",
+      description: "The category is leading on both price and liquidity and remains the active tape.",
+      nextState: isWeakening || context.runnerUp && scoreCategory(context.runnerUp) > scoreCategory(category) * 0.92 ? "Exhausting" : "Exhausting",
+    };
+  }
+
+  if (isWeakening || context.breadth < 45) {
+    return {
+      state: "Exhausting",
+      description: "The category is still strong, but breadth or volume confirmation is starting to thin out.",
+      nextState: "Rotating Out",
+    };
+  }
+
+  return {
+    state: "Exhausting",
+    description: "Late-cycle strength is visible, but the move is vulnerable to rotation if breadth softens.",
+    nextState: "Rotating Out",
+  };
+}
+
+function buildNarrativeTimeline(category: CategoryItem, rotationScore: number, lifecycle: NarrativeLifecycle): NarrativeTimelineStep[] {
+  const avgPriceChange = toNumber(category.avg_price_change, 0);
+  const marketCapChange = toNumber(category.market_cap_change, 0);
+  const volumeChange = toNumber(category.volume_change, 0);
+  const detectedAt = formatTimestamp(category.last_updated);
+
+  return [
+    {
+      stage: "detected",
+      title: "Detected",
+      detail: `${category.title ?? category.name ?? "Category"} entered the live rotation set with ${formatPercent(avgPriceChange)} average price change.`,
+      value: detectedAt,
+    },
+    {
+      stage: "strengthening",
+      title: "Strengthening",
+      detail: `Volume change at ${formatPercent(volumeChange)} and market cap change at ${formatPercent(marketCapChange)} confirm capital is following through.`,
+      value: `Rotation score ${rotationScore}/100`,
+    },
+    {
+      stage: "peak",
+      title: "Peak",
+      detail: `Peak conviction is reached when breadth, liquidity, and price move together across the category basket.`,
+      value: lifecycle.state,
+    },
+    {
+      stage: "fading",
+      title: "Fading",
+      detail: "Watch for narrowing breadth or softening volume before the category rotates lower in the stack.",
+      value: lifecycle.nextState,
+    },
+  ];
+}
+
+function buildNarrativeExplanation(category: CategoryItem, rotationScore: number, lifecycle: NarrativeLifecycle): NarrativeExplanation {
+  const avgPriceChange = toNumber(category.avg_price_change, 0);
+  const marketCapChange = toNumber(category.market_cap_change, 0);
+  const volumeChange = toNumber(category.volume_change, 0);
+  const categoryName = category.title ?? category.name ?? "The category";
+
+  return {
+    title: "Why this narrative matters",
+    bullets: [
+      `${categoryName} is moving on real capital rotation: market cap change is ${formatPercent(marketCapChange)} and volume change is ${formatPercent(volumeChange)}.`,
+      `Average price change of ${formatPercent(avgPriceChange)} shows the move is being confirmed across the basket rather than by one outlier.`,
+      `Rotation score sits at ${rotationScore}/100, placing the narrative in a ${lifecycle.state.toLowerCase()} lifecycle phase.`,
+      `The move matters because momentum and liquidity are aligned, which typically keeps institutional flows focused until breadth starts to roll over.`,
+    ],
+  };
+}
+
+function buildNarrativeHeatmap(context: CmcMarketContext): NarrativeHeatmapItem[] {
+  return context.ranked.slice(0, 10).map((category, index) => {
+    const rotation = buildNarrativeRotationScore(category);
+    const lifecycle = classifyNarrativeLifecycle(category, rotation.score, context).state;
+
+    return {
+      rank: index + 1,
+      name: category.title ?? category.name ?? `Category ${index + 1}`,
+      score: rotation.score,
+      lifecycle,
+      avgPriceChange: formatPercent(toNumber(category.avg_price_change, 0)),
+      marketCapChange: formatPercent(toNumber(category.market_cap_change, 0)),
+      volumeChange: formatPercent(toNumber(category.volume_change, 0)),
+    };
+  });
+}
+
 function buildNewsHeadline(category: CategoryItem, marketRegime: MarketRegime) {
   const name = category.title ?? category.name ?? "Market rotation";
   const move = formatPercent(toNumber(category.avg_price_change, 0));
@@ -698,8 +868,13 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
   const latestNews = buildLatestNewsFromCategories(categories, source);
   const leadHeadline = latestNews[0]?.title ?? "";
   const strength = deriveNarrativeStrength(leader, context.breadth, context.momentum);
+  const rotation = buildNarrativeRotationScore(leader);
+  const lifecycle = classifyNarrativeLifecycle(leader, rotation.score, context);
   const leaderAssets = buildAssetsFromCategory(leader);
   const runnerAssets = buildAssetsFromCategory(runnerUp);
+  const heatmap = buildNarrativeHeatmap(context);
+  const timeline = buildNarrativeTimeline(leader, rotation.score, lifecycle);
+  const explanation = buildNarrativeExplanation(leader, rotation.score, lifecycle);
 
   return {
     source,
@@ -740,6 +915,11 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
       onchainConfirmation: strength.onchainConfirmation,
       priceConfirmation: strength.priceConfirmation,
     },
+    narrativeRotationScore: rotation,
+    narrativeLifecycle: lifecycle,
+    narrativeHeatmap: heatmap,
+    narrativeTimeline: timeline,
+    narrativeExplanation: explanation,
     watchlist: context.ranked.slice(0, 7).map((category, index) => ({
       name: category.title ?? category.name ?? `Asset ${index + 1}`,
       rank: index + 1,
