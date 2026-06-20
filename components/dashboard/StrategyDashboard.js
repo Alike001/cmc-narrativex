@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import WidgetCard from "@/components/dashboard/WidgetCard";
 import Badge from "@/components/ui/Badge";
 import PulseLine from "@/components/ui/PulseLine";
@@ -356,6 +356,177 @@ function NarrativeRotationAgentPanel({
               ))}
             </ul>
           </div>
+        </div>
+      </div>
+    </WidgetCard>
+  );
+}
+
+function buildAllocationReasoning(snapshot, agent) {
+  const dominantNarrative = snapshot?.narratives?.dominantNarrative?.name ?? agent?.dominantNarrative ?? "the current leader";
+  const narrativeStrength = snapshot?.narratives?.narrativeStrength?.score ?? 0;
+  const marketRegime = snapshot?.regime?.active ?? "Sideways";
+  const riskScore = snapshot?.risk?.score ?? 0;
+  const heatmap = Array.isArray(snapshot?.narrativeHeatmap) ? snapshot.narrativeHeatmap : [];
+  const topSignals = heatmap.slice(0, 3).map((item) => ({
+    name: item.name,
+    price: item.avgPriceChange,
+    volume: item.volumeChange,
+    marketCap: item.marketCapChange,
+  }));
+
+  const topSignal = topSignals[0];
+  const strengthTone = narrativeStrength >= 80 ? "text-pulse-400" : narrativeStrength >= 60 ? "text-signal-400" : "text-amber-400";
+  const regimeTone = marketRegime === "Bull" || marketRegime === "Euphoria" ? "text-pulse-400" : "text-signal-400";
+  const riskTone = riskScore >= 65 ? "text-danger-400" : "text-signal-400";
+
+  const explanation = [
+    `The agent selected ${dominantNarrative} because it has the strongest narrative strength read (${narrativeStrength}/100) and the leading momentum profile in the current basket.`,
+    topSignal
+      ? `Its top signal set is led by ${topSignal.name}, where ${topSignal.volume} volume change, ${topSignal.marketCap} market-cap change, and ${topSignal.price} average price change confirm capital rotation.`
+      : "Its top momentum signals remain aligned across price, volume, and market-cap change.",
+    `${marketRegime} regime conditions support the allocation, while the ${riskScore}/100 risk score argues for sizing with either cash reserve or tighter discipline depending on profile.`,
+  ].join(" ");
+
+  return {
+    dominantNarrative,
+    narrativeStrength,
+    marketRegime,
+    riskScore,
+    topSignals,
+    explanation,
+    strengthTone,
+    regimeTone,
+    riskTone,
+  };
+}
+
+function WhyThisAllocationPanel({ snapshot, agent }) {
+  const reasoning = buildAllocationReasoning(snapshot, agent);
+  const indicators = [
+    { label: "Dominant Narrative", value: reasoning.dominantNarrative, tone: "text-pulse-400" },
+    { label: "Narrative Strength", value: `${reasoning.narrativeStrength}/100`, tone: reasoning.strengthTone },
+    { label: "Market Regime", value: reasoning.marketRegime, tone: reasoning.regimeTone },
+    { label: "Risk Score", value: `${reasoning.riskScore}/100`, tone: reasoning.riskTone },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-emerald-500/15 bg-ink-900/90 p-4 shadow-[0_0_0_1px_rgba(16,185,129,0.08)]">
+      <div className="flex items-center justify-between gap-3 border-b border-emerald-500/10 pb-3">
+        <div>
+          <p className="label-eyebrow text-emerald-400">Why this allocation?</p>
+          <p className="mt-1 text-xs uppercase tracking-[0.18em] text-mist-500">Terminal reasoning</p>
+        </div>
+        <Badge tone="signal">Live rationale</Badge>
+      </div>
+
+      <div className="mt-4 space-y-4 font-mono text-sm text-mist-200">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {indicators.map((item) => (
+            <div key={item.label} className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">{item.label}</p>
+              <p className={`mt-1.5 font-semibold ${item.tone}`}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/30 p-4">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Explanation</p>
+          <p className="mt-2 leading-relaxed text-mist-200">{reasoning.explanation}</p>
+        </div>
+
+        <div className="rounded-xl border border-white/5 bg-black/30 p-4">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Top momentum signals</p>
+          <div className="mt-3 space-y-2">
+            {reasoning.topSignals.map((signal) => (
+              <div key={signal.name} className="flex items-center justify-between gap-3">
+                <span className="text-emerald-400">● {signal.name}</span>
+                <span className="text-right text-mist-300">
+                  {signal.volume} vol · {signal.marketCap} mcap · {signal.price} price
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs text-emerald-300">
+            Green = constructive signal
+          </span>
+          <span className="rounded-full border border-danger-500/20 bg-danger-500/10 px-3 py-1 text-xs text-danger-300">
+            Red = risk warning
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function buildDecisionSummary(agent) {
+  const dominantAllocation = agent?.recommendedAllocation?.[0];
+  const cashAllocation = agent?.recommendedAllocation?.[3];
+
+  if (!dominantAllocation) {
+    return "No allocation summary available.";
+  }
+
+  return `${dominantAllocation.name} ${dominantAllocation.percent}%${cashAllocation ? ` · cash ${cashAllocation.percent}%` : ""}`;
+}
+
+function AgentDecisionLogPanel({ decisions }) {
+  const entries = decisions.slice(0, 5);
+
+  return (
+    <WidgetCard
+      eyebrow="AI terminal log"
+      title="Agent Decision Log"
+      className="lg:col-span-4"
+      headerRight={<Badge tone="signal">{entries.length} latest</Badge>}
+    >
+      <div className="rounded-2xl border border-emerald-500/10 bg-black/40 p-4 font-mono">
+        <div className="flex items-center justify-between border-b border-emerald-500/10 pb-3 text-[11px] uppercase tracking-[0.18em] text-mist-500">
+          <span>Newest first</span>
+          <span>scroll to inspect history</span>
+        </div>
+
+        <div className="mt-4 max-h-72 space-y-3 overflow-y-auto pr-1">
+          {entries.length > 0 ? (
+            entries.map((entry) => (
+              <div key={entry.id} className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                    {new Date(entry.timestamp).toLocaleString([], {
+                      month: "short",
+                      day: "2-digit",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </span>
+                  <Badge tone={entry.confidence >= 80 ? "pulse" : entry.confidence >= 60 ? "signal" : "amber"}>
+                    {entry.confidence}/100
+                  </Badge>
+                </div>
+                <div className="mt-3 grid gap-2 text-sm text-mist-200 md:grid-cols-[180px_120px_1fr]">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Dominant Narrative</p>
+                    <p className="mt-1 text-emerald-400">{entry.dominantNarrative}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Confidence</p>
+                    <p className="mt-1 text-signal-400">{entry.confidence}/100</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Allocation Summary</p>
+                    <p className="mt-1 text-mist-200">{entry.allocationSummary}</p>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-white/10 bg-ink-850/60 p-4 text-sm text-mist-500">
+              No decisions logged yet.
+            </div>
+          )}
         </div>
       </div>
     </WidgetCard>
@@ -969,6 +1140,8 @@ export default function StrategyDashboard() {
   const [riskProfile, setRiskProfile] = useState("Moderate");
   const [holdingPeriod, setHoldingPeriod] = useState("1 Week");
   const [capitalAmount, setCapitalAmount] = useState(50000);
+  const [decisionLog, setDecisionLog] = useState([]);
+  const lastDecisionSignatureRef = useRef("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -993,6 +1166,38 @@ export default function StrategyDashboard() {
     return () => controller.abort();
   }, [refreshToken]);
 
+  const updatedAt = snapshot ? new Date(snapshot.updatedAt) : new Date();
+  const agent = snapshot
+    ? buildNarrativeRotationAgent(snapshot, {
+        riskProfile,
+        holdingPeriod,
+        capitalAmount,
+      })
+    : null;
+
+  useEffect(() => {
+    if (!snapshot || !agent) {
+      return;
+    }
+
+    const signature = `${riskProfile}|${holdingPeriod}|${capitalAmount}`;
+    if (lastDecisionSignatureRef.current === signature) {
+      return;
+    }
+
+    lastDecisionSignatureRef.current = signature;
+    setDecisionLog((current) => [
+      {
+        id: `${signature}-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        dominantNarrative: agent.dominantNarrative,
+        confidence: agent.confidenceScore,
+        allocationSummary: buildDecisionSummary(agent),
+      },
+      ...current,
+    ].slice(0, 5));
+  }, [snapshot, agent, riskProfile, holdingPeriod, capitalAmount]);
+
   if (status === "loading") {
     return (
       <div className="space-y-5">
@@ -1010,13 +1215,6 @@ export default function StrategyDashboard() {
     return <ErrorState error={error} onRetry={() => setRefreshToken((value) => value + 1)} />;
   }
 
-  const updatedAt = new Date(snapshot.updatedAt);
-  const agent = buildNarrativeRotationAgent(snapshot, {
-    riskProfile,
-    holdingPeriod,
-    capitalAmount,
-  });
-
   return (
     <section className="container-shell py-10">
       <NarrativeRotationAgentPanel
@@ -1029,6 +1227,14 @@ export default function StrategyDashboard() {
         setHoldingPeriod={setHoldingPeriod}
         setCapitalAmount={setCapitalAmount}
       />
+
+      <div className="mt-5">
+        <AgentDecisionLogPanel decisions={decisionLog} />
+      </div>
+
+      <div className="mt-5">
+        <WhyThisAllocationPanel snapshot={snapshot} agent={agent} />
+      </div>
 
       <div className="rounded-[28px] border border-white/5 bg-ink-850/70 px-6 py-6 shadow-card sm:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
