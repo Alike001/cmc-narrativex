@@ -176,6 +176,59 @@ function NumberField({ label, value, onChange, min = 0, step = 1 }) {
   );
 }
 
+function buildNarrativeRotationReportMarkdown({ snapshot, agent, generatedAt }) {
+  const lines = [];
+  const timestamp = formatDashboardTimestamp(generatedAt);
+  const risk = snapshot?.risk ?? {};
+  const allocations = Array.isArray(agent?.recommendedAllocation) ? agent.recommendedAllocation : [];
+  const watchlist = Array.isArray(agent?.prioritizedWatchlist) ? agent.prioritizedWatchlist : [];
+
+  lines.push("# Narrative Rotation Report");
+  lines.push("");
+  lines.push(`**Generated:** ${timestamp}`);
+  lines.push(`**Dominant Narrative:** ${agent?.dominantNarrative ?? "N/A"}`);
+  lines.push(`**Confidence Score:** ${agent?.confidenceScore ?? 0}/100`);
+  lines.push(`**Market Regime:** ${snapshot?.regime?.active ?? "N/A"}`);
+  lines.push(`**Risk Score:** ${risk.score ?? 0}/100 (${risk.label ?? "N/A"})`);
+  lines.push("");
+  lines.push("## Recommended Allocation");
+  allocations.forEach((item) => {
+    lines.push(`- ${item.name}: ${item.percent}%`);
+  });
+  lines.push("");
+  lines.push("## Watchlist");
+  watchlist.forEach((item) => {
+    lines.push(`- #${item.rank} ${item.name} (${item.momentum})`);
+  });
+  lines.push("");
+  lines.push("## Entry Strategy");
+  lines.push(agent?.entryStrategy ?? "N/A");
+  lines.push("");
+  lines.push("## Exit Strategy");
+  lines.push(agent?.exitStrategy ?? "N/A");
+  lines.push("");
+  lines.push("## Allocation Summary");
+  lines.push(agent?.reasoningSummary ?? "N/A");
+  lines.push("");
+  lines.push("## Timestamp");
+  lines.push(timestamp);
+
+  return `${lines.join("\n")}\n`;
+}
+
+function downloadTextFile(filename, content) {
+  const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function NarrativeXArchitectureModal({ open, onClose }) {
   useEffect(() => {
     if (!open) {
@@ -283,6 +336,7 @@ function NarrativeRotationAgentPanel({
   setRiskProfile,
   setHoldingPeriod,
   setCapitalAmount,
+  onGenerateReport,
 }) {
   const dominantAllocation = agent.recommendedAllocation[0];
   const secondaryAllocation = agent.recommendedAllocation[1];
@@ -298,6 +352,13 @@ function NarrativeRotationAgentPanel({
           <Badge tone="pulse">{agent.confidenceScore}/100 confidence</Badge>
           <Badge tone="signal">{riskProfile}</Badge>
           <Badge tone="neutral">{holdingPeriod}</Badge>
+          <button
+            type="button"
+            onClick={onGenerateReport}
+            className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-medium tracking-[0.16em] text-mist-200 transition hover:-translate-y-0.5 hover:bg-white/10"
+          >
+            Generate Report
+          </button>
         </div>
       }
       className="lg:col-span-4"
@@ -1410,6 +1471,16 @@ export default function StrategyDashboard() {
         capitalAmount,
       })
     : null;
+  const handleGenerateReport = () => {
+    if (!snapshot || !agent) {
+      return;
+    }
+
+    const generatedAt = new Date().toISOString();
+    const report = buildNarrativeRotationReportMarkdown({ snapshot, agent, generatedAt });
+    const datePart = generatedAt.slice(0, 10);
+    downloadTextFile(`narrativex-agent-report-${datePart}.md`, report);
+  };
 
   useEffect(() => {
     if (!snapshot || !agent) {
@@ -1464,6 +1535,7 @@ export default function StrategyDashboard() {
         setRiskProfile={setRiskProfile}
         setHoldingPeriod={setHoldingPeriod}
         setCapitalAmount={setCapitalAmount}
+        onGenerateReport={handleGenerateReport}
       />
 
       <NarrativeXArchitectureModal
