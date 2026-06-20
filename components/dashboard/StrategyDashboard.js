@@ -473,6 +473,101 @@ function buildDecisionSummary(agent) {
   return `${dominantAllocation.name} ${dominantAllocation.percent}%${cashAllocation ? ` · cash ${cashAllocation.percent}%` : ""}`;
 }
 
+function buildAllocationBreakdown(agent) {
+  return Array.isArray(agent?.recommendedAllocation)
+    ? agent.recommendedAllocation.map((item) => ({
+        name: item.name,
+        percent: item.percent,
+      }))
+    : [];
+}
+
+function formatAllocationDelta(value) {
+  const signed = value > 0 ? `+${value}` : `${value}`;
+  return `${signed}%`;
+}
+
+function NarrativeRotationChangesPanel({ decisions, snapshot }) {
+  const current = decisions[0];
+  const previous = decisions[1];
+  const currentLeader = current?.dominantNarrative ?? snapshot?.narratives?.dominantNarrative?.name ?? "N/A";
+  const previousLeader = previous?.dominantNarrative ?? snapshot?.narratives?.previousNarrative?.name ?? "N/A";
+  const currentConfidence = current?.confidence ?? snapshot?.narratives?.narrativeStrength?.score ?? 0;
+  const previousConfidence = previous?.confidence ?? snapshot?.narratives?.previousNarrative?.peakConfidence ?? currentConfidence;
+  const currentRisk = current?.riskLabel ?? snapshot?.risk?.label ?? "Unknown";
+  const previousRisk = previous?.riskLabel ?? snapshot?.risk?.label ?? "Unknown";
+  const currentAllocations = current?.allocations ?? [];
+  const previousAllocations = previous?.allocations ?? [];
+
+  const allNames = new Set([...currentAllocations.map((item) => item.name), ...previousAllocations.map((item) => item.name)]);
+  const allocationChanges = Array.from(allNames)
+    .map((name) => {
+      const currentPercent = currentAllocations.find((item) => item.name === name)?.percent ?? 0;
+      const previousPercent = previousAllocations.find((item) => item.name === name)?.percent ?? 0;
+      return {
+        name,
+        delta: currentPercent - previousPercent,
+      };
+    })
+    .filter((item) => item.delta !== 0)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+  return (
+    <WidgetCard eyebrow="Narrative rotation changes" title="Rotation delta" className="lg:col-span-4">
+      <div className="rounded-2xl border border-white/5 bg-black/40 p-4 font-mono">
+        <div className="flex items-center justify-between gap-3 border-b border-white/5 pb-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-mist-500">AI terminal diff</p>
+            <p className="mt-1 text-sm text-mist-300">Compares the latest decision against the previous logged state.</p>
+          </div>
+          <Badge tone="signal">{decisions.length > 1 ? "Delta ready" : "Waiting for prior decision"}</Badge>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Previous Leader</p>
+            <p className="mt-1.5 text-sm text-mist-200">{previousLeader}</p>
+          </div>
+          <div className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Current Leader</p>
+            <p className="mt-1.5 text-sm text-emerald-400">{currentLeader}</p>
+          </div>
+          <div className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Confidence</p>
+            <p className="mt-1.5 text-sm text-signal-400">
+              {previousConfidence} → {currentConfidence}
+            </p>
+          </div>
+          <div className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Risk</p>
+            <p className="mt-1.5 text-sm text-mist-200">
+              {previousRisk} → <span className="text-emerald-400">{currentRisk}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-white/5 bg-ink-850/80 p-4">
+          <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Allocation Change</p>
+          <div className="mt-3 space-y-2">
+            {allocationChanges.length > 0 ? (
+              allocationChanges.map((item) => (
+                <div key={item.name} className="flex items-center justify-between gap-3">
+                  <span className={item.delta > 0 ? "text-emerald-400" : "text-danger-400"}>{item.name}</span>
+                  <span className={item.delta > 0 ? "text-emerald-400" : "text-danger-400"}>
+                    {formatAllocationDelta(item.delta)}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-mist-500">No prior allocation change recorded yet.</p>
+            )}
+          </div>
+        </div>
+      </div>
+    </WidgetCard>
+  );
+}
+
 function AgentDecisionLogPanel({ decisions }) {
   const entries = decisions.slice(0, 5);
 
@@ -1193,6 +1288,8 @@ export default function StrategyDashboard() {
         dominantNarrative: agent.dominantNarrative,
         confidence: agent.confidenceScore,
         allocationSummary: buildDecisionSummary(agent),
+        riskLabel: snapshot.risk?.label ?? "Unknown",
+        allocations: buildAllocationBreakdown(agent),
       },
       ...current,
     ].slice(0, 5));
@@ -1234,6 +1331,10 @@ export default function StrategyDashboard() {
 
       <div className="mt-5">
         <WhyThisAllocationPanel snapshot={snapshot} agent={agent} />
+      </div>
+
+      <div className="mt-5">
+        <NarrativeRotationChangesPanel decisions={decisionLog} snapshot={snapshot} />
       </div>
 
       <div className="rounded-[28px] border border-white/5 bg-ink-850/70 px-6 py-6 shadow-card sm:px-8">
