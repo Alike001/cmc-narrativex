@@ -5,6 +5,7 @@ import WidgetCard from "@/components/dashboard/WidgetCard";
 import Badge from "@/components/ui/Badge";
 import PulseLine from "@/components/ui/PulseLine";
 import RadialGauge from "@/components/ui/RadialGauge";
+import { formatDashboardTimestamp } from "@/lib/cmc";
 import { loadStrategyPlatformSnapshot } from "@/lib/strategy-platform";
 import { buildNarrativeRotationAgent } from "@/lib/narrative-agent";
 
@@ -734,12 +735,7 @@ function AgentDecisionLogPanel({ decisions }) {
               <div key={entry.id} className="rounded-xl border border-white/5 bg-ink-850/80 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
-                    {new Date(entry.timestamp).toLocaleString([], {
-                      month: "short",
-                      day: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatDashboardTimestamp(entry.timestamp)}
                   </span>
                   <Badge tone={entry.confidence >= 80 ? "pulse" : entry.confidence >= 60 ? "signal" : "amber"}>
                     {entry.confidence}/100
@@ -1406,7 +1402,7 @@ export default function StrategyDashboard() {
     return () => controller.abort();
   }, [refreshToken]);
 
-  const updatedAt = snapshot ? new Date(snapshot.updatedAt) : new Date();
+  const updatedAt = formatDashboardTimestamp(snapshot?.updatedAt);
   const agent = snapshot
     ? buildNarrativeRotationAgent(snapshot, {
         riskProfile,
@@ -1512,7 +1508,7 @@ export default function StrategyDashboard() {
             <Badge tone={getSourceTone(snapshot.source)}>{getModeBadgeLabel(snapshot.source)}</Badge>
             <Badge tone={getConnectionTone(snapshot.connectionStatus)}>{snapshot.connectionStatus}</Badge>
             <Badge tone="neutral">
-              Updated {updatedAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
+              {updatedAt}
             </Badge>
           </div>
         </div>

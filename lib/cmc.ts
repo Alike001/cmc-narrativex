@@ -455,11 +455,18 @@ function formatPercent(value: number) {
   return formatted;
 }
 
-function formatTimestamp(value?: string) {
-  if (!value) return "Updated recently";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return "Updated recently";
-  return `Updated ${parsed.toLocaleString("en-US", {
+const DASHBOARD_TIMESTAMP_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function formatDashboardTimestamp(value?: string, generatedAt = new Date().toISOString()) {
+  const generatedDate = new Date(generatedAt);
+  const sourceDate = value ? new Date(value) : null;
+
+  const hasValidSource = !!sourceDate && !Number.isNaN(sourceDate.getTime());
+  const useSource =
+    hasValidSource && generatedDate.getTime() - (sourceDate?.getTime() ?? generatedDate.getTime()) <= DASHBOARD_TIMESTAMP_MAX_AGE_MS;
+  const selectedDate = useSource && sourceDate ? sourceDate : generatedDate;
+
+  return `Updated ${selectedDate.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -742,11 +749,16 @@ function buildNarrativeTimeline(
   rotationScore: number,
   lifecycle: NarrativeLifecycle,
   context: CmcMarketContext,
+  generatedAt?: string,
 ): NarrativeTimelineStep[] {
   const avgPriceChange = toNumber(category.avg_price_change, 0);
   const marketCapChange = toNumber(category.market_cap_change, 0);
   const volumeChange = toNumber(category.volume_change, 0);
-  const detectedAt = formatTimestamp(category.last_updated);
+  const runtimeTimestamp = generatedAt ?? new Date().toISOString();
+  const detectedAt = formatDashboardTimestamp(category.last_updated, runtimeTimestamp);
+  const strengtheningAt = formatDashboardTimestamp(runtimeTimestamp, runtimeTimestamp);
+  const peakAt = formatDashboardTimestamp(runtimeTimestamp, runtimeTimestamp);
+  const fadingAt = formatDashboardTimestamp(runtimeTimestamp, runtimeTimestamp);
   const leadGap = context.scored[1] ? rotationScore - context.scored[1].rotationScore : rotationScore;
   const momentum = volumeChange * 0.6 + avgPriceChange * 0.4;
 
@@ -761,19 +773,19 @@ function buildNarrativeTimeline(
       stage: "strengthening",
       title: "Strengthening",
       detail: `Volume change at ${formatPercent(volumeChange)} and market cap change at ${formatPercent(marketCapChange)} confirm capital is following through.`,
-      value: `Rotation score ${rotationScore}/100`,
+      value: `${strengtheningAt} · Rotation score ${rotationScore}/100`,
     },
     {
       stage: "peak",
       title: "Peak",
       detail: `The category reached ${lifecycle.state} because its weighted rotation score outran the broader universe by ${Math.max(1, Math.round(leadGap))} points.`,
-      value: lifecycle.state,
+      value: `${peakAt} · ${lifecycle.state}`,
     },
     {
       stage: "fading",
       title: "Fading",
       detail: `${momentum >= 0 ? "Momentum remains constructive, but" : "Momentum is already softening, and"} the next slowdown to watch is narrowing volume or market-cap follow-through.`,
-      value: lifecycle.nextState,
+      value: `${fadingAt} · ${lifecycle.nextState}`,
     },
   ];
 }
@@ -1095,7 +1107,7 @@ function buildNarrativesFromCategories(
   const leaderAssets = buildAssetsFromCategory(leader);
   const runnerAssets = buildAssetsFromCategory(runnerUp);
   const heatmap = buildNarrativeHeatmap(context);
-  const timeline = buildNarrativeTimeline(leader, rotation.score, lifecycle, context);
+  const timeline = buildNarrativeTimeline(leader, rotation.score, lifecycle, context, generatedAt);
   const explanation = buildNarrativeExplanation(leader, rotation.score, lifecycle);
 
   return {
@@ -1107,7 +1119,7 @@ function buildNarrativesFromCategories(
       status: "Dominant",
       strength: strength.score,
       momentum: toNumber(leader.avg_price_change, 0) >= 0 ? "Accelerating" : "Cooling",
-      detectedAt: formatTimestamp(leader.last_updated),
+      detectedAt: formatDashboardTimestamp(leader.last_updated, generatedAt ?? new Date().toISOString()),
       summary:
         `Search and liquidity are clustering around ${leaderTitle}. ${leadHeadline ? `${leadHeadline}.` : ""}`.trim(),
       assets: leaderAssets,
