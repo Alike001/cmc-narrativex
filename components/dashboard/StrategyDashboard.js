@@ -107,16 +107,16 @@ function NumberField({ label, value, onChange, min = 0, step = 1 }) {
   );
 }
 
-function NarrativeRotationAgentPanel({ snapshot }) {
-  const [riskProfile, setRiskProfile] = useState("Moderate");
-  const [holdingPeriod, setHoldingPeriod] = useState("1 Week");
-  const [capitalAmount, setCapitalAmount] = useState(50000);
-  const agent = buildNarrativeRotationAgent(snapshot, {
-    riskProfile,
-    holdingPeriod,
-    capitalAmount,
-  });
-
+function NarrativeRotationAgentPanel({
+  snapshot,
+  agent,
+  riskProfile,
+  holdingPeriod,
+  capitalAmount,
+  setRiskProfile,
+  setHoldingPeriod,
+  setCapitalAmount,
+}) {
   const dominantAllocation = agent.recommendedAllocation[0];
   const secondaryAllocation = agent.recommendedAllocation[1];
   const tertiaryAllocation = agent.recommendedAllocation[2];
@@ -202,7 +202,7 @@ function NarrativeRotationAgentPanel({ snapshot }) {
                   {agent.dominantNarrative}
                 </p>
                 <p className="text-sm leading-relaxed text-mist-300">
-                  {snapshot.narratives.narrativeExplanation?.summary}
+              {snapshot.narratives.narrativeExplanation?.summary}
                 </p>
                 <div className="flex flex-wrap gap-2 pt-1">
                   <Badge tone="signal">{snapshot.regime.active}</Badge>
@@ -277,11 +277,33 @@ function NarrativeRotationAgentPanel({ snapshot }) {
 
           <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
             <p className="label-eyebrow">Suggested Watchlist</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {agent.suggestedWatchlist.map((asset) => (
-                <Badge key={asset} tone="signal">
-                  {asset}
-                </Badge>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {(agent.prioritizedWatchlist ?? agent.suggestedWatchlist.map((asset, index) => ({
+                rank: index + 1,
+                name: asset,
+                priority: 0,
+                tone: index === 0 ? "pulse" : "signal",
+                note: "",
+              }))).map((item) => (
+                <div
+                  key={item.name}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-white/5 bg-ink-850 p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                      #{item.rank} priority
+                    </p>
+                    <p className="mt-1 truncate font-display text-sm font-semibold text-mist-100">
+                      {item.name}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Badge tone={item.tone ?? "signal"}>{item.note || `${item.priority} prio`}</Badge>
+                    <span className="font-mono text-[11px] text-mist-500">
+                      {item.momentum === "rising" ? "rising" : item.momentum === "cooling" ? "cooling" : "steady"}
+                    </span>
+                  </div>
+                </div>
               ))}
             </div>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -305,21 +327,6 @@ function NarrativeRotationAgentPanel({ snapshot }) {
       </div>
     </WidgetCard>
   );
-}
-
-function buildWhyThisStrategy(snapshot) {
-  const narrative = snapshot.narratives.dominantNarrative;
-  const regime = snapshot.regime;
-  const risk = snapshot.risk;
-  const newsItem = snapshot.news?.[0];
-  const newsTitle = newsItem?.title ?? "recent market headlines";
-
-  return [
-    `Narrative strength is ${narrative.strength}/100, with ${narrative.momentum.toLowerCase()} momentum and strong agreement across social, on-chain, and price signals.`,
-    `The market is in a ${regime.active.toLowerCase()} regime, and the supporting breadth, liquidity, and sentiment backdrop still favors trend continuation.`,
-    `Risk is ${risk.label.toLowerCase()} at ${risk.score}/100, which supports a constructive stance but still argues for disciplined sizing.`,
-    `Latest news flow is centered on ${newsTitle}, reinforcing the same theme instead of fighting it.`,
-  ];
 }
 
 function NarrativeAnalysisPanel({ narratives, watchlist }) {
@@ -767,38 +774,38 @@ function RiskScorePanel({ risk }) {
   );
 }
 
-function StrategyOutputPanel({ strategy }) {
+function StrategyOutputPanel({ agent }) {
   return (
     <WidgetCard
       eyebrow="Strategy output"
       title="Execution plan"
-      headerRight={<Badge tone="pulse">{strategy.confidenceLabel}</Badge>}
+      headerRight={<Badge tone="pulse">{agent.confidenceScore}/100 confidence</Badge>}
       className="lg:col-span-2"
     >
       <div className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
-          <Metric label="Confidence score" value={`${strategy.confidenceScore}/100`} />
-          <Metric label="Position sizing" value={strategy.positionSizing} />
+          <Metric label="Confidence score" value={`${agent.confidenceScore}/100`} />
+          <Metric label="Position sizing" value={agent.profileLabel} />
         </div>
 
         <div className="grid gap-4">
           <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
             <p className="label-eyebrow">Entry recommendation</p>
-            <p className="mt-2 text-sm leading-relaxed text-mist-300">{strategy.entryRecommendation}</p>
+            <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.entryStrategy}</p>
           </div>
           <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
             <p className="label-eyebrow">Exit recommendation</p>
-            <p className="mt-2 text-sm leading-relaxed text-mist-300">{strategy.exitRecommendation}</p>
+            <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.exitStrategy}</p>
           </div>
         </div>
 
         <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
           <p className="label-eyebrow">Thesis</p>
-          <p className="mt-2 text-sm leading-relaxed text-mist-300">{strategy.thesis}</p>
+          <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.reasoningSummary}</p>
           <div className="mt-4 flex flex-wrap gap-2">
-            {strategy.watchlist.map((asset) => (
-              <Badge key={asset} tone="signal">
-                {asset}
+            {(agent.prioritizedWatchlist ?? []).map((item) => (
+              <Badge key={item.name} tone={item.tone ?? "signal"}>
+                #{item.rank} {item.name}
               </Badge>
             ))}
           </div>
@@ -808,14 +815,18 @@ function StrategyOutputPanel({ strategy }) {
   );
 }
 
-function AiStrategyOutputPanel({ snapshot }) {
+function AiStrategyOutputPanel({ snapshot, agent }) {
   const dominantNarrative = snapshot.narratives.dominantNarrative.name;
   const marketRegime = snapshot.regime.active;
   const riskScore = snapshot.risk.score;
   const riskLabel = snapshot.risk.label;
-  const recommendedStrategy = snapshot.strategy.thesis;
-  const confidenceScore = snapshot.strategy.confidenceScore;
-  const reasons = buildWhyThisStrategy(snapshot);
+  const confidenceScore = agent.confidenceScore;
+  const reasons = [
+    agent.reasoningSummary,
+    agent.entryStrategy,
+    agent.exitStrategy,
+    agent.riskNotes[0],
+  ].filter(Boolean);
 
   return (
     <WidgetCard
@@ -835,26 +846,24 @@ function AiStrategyOutputPanel({ snapshot }) {
 
           <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
             <p className="label-eyebrow">Recommended Strategy</p>
-            <p className="mt-2 text-sm leading-relaxed text-mist-300">
-              {recommendedStrategy}
-            </p>
+            <p className="mt-2 text-sm leading-relaxed text-mist-300">{agent.reasoningSummary}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Entry</p>
                 <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
-                  {snapshot.strategy.entryRecommendation}
+                  {agent.entryStrategy}
                 </p>
               </div>
               <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Exit</p>
                 <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
-                  {snapshot.strategy.exitRecommendation}
+                  {agent.exitStrategy}
                 </p>
               </div>
               <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
                 <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">Sizing</p>
                 <p className="mt-1.5 text-sm leading-relaxed text-mist-100">
-                  {snapshot.strategy.positionSizing}
+                  {agent.profileLabel} / {agent.holdingLabel}
                 </p>
               </div>
             </div>
@@ -920,6 +929,9 @@ export default function StrategyDashboard() {
   const [status, setStatus] = useState("loading");
   const [error, setError] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
+  const [riskProfile, setRiskProfile] = useState("Moderate");
+  const [holdingPeriod, setHoldingPeriod] = useState("1 Week");
+  const [capitalAmount, setCapitalAmount] = useState(50000);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -963,10 +975,24 @@ export default function StrategyDashboard() {
 
   const mcpPlan = getCoinMarketCapMcpPlan();
   const updatedAt = new Date(snapshot.updatedAt);
+  const agent = buildNarrativeRotationAgent(snapshot, {
+    riskProfile,
+    holdingPeriod,
+    capitalAmount,
+  });
 
   return (
     <section className="container-shell py-10">
-      <NarrativeRotationAgentPanel snapshot={snapshot} />
+      <NarrativeRotationAgentPanel
+        snapshot={snapshot}
+        agent={agent}
+        riskProfile={riskProfile}
+        holdingPeriod={holdingPeriod}
+        capitalAmount={capitalAmount}
+        setRiskProfile={setRiskProfile}
+        setHoldingPeriod={setHoldingPeriod}
+        setCapitalAmount={setCapitalAmount}
+      />
 
       <div className="rounded-[28px] border border-white/5 bg-ink-850/70 px-6 py-6 shadow-card sm:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
@@ -1003,8 +1029,8 @@ export default function StrategyDashboard() {
         <NarrativeHeatmapPanel heatmap={snapshot.narrativeHeatmap ?? []} />
         <NarrativeTimelinePanel timeline={snapshot.narratives.narrativeTimeline ?? []} />
         <NarrativeExplanationPanel explanation={snapshot.narratives.narrativeExplanation} />
-        <StrategyOutputPanel strategy={snapshot.strategy} />
-        <AiStrategyOutputPanel snapshot={snapshot} />
+        <StrategyOutputPanel agent={agent} />
+        <AiStrategyOutputPanel snapshot={snapshot} agent={agent} />
       </div>
     </section>
   );
