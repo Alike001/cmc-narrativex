@@ -156,6 +156,36 @@ type CmcMarketContext = {
   marketCapPulse: number;
 };
 
+type DataSourceMode = "live" | "fallback" | "development";
+
+type DataSourceMeta = {
+  source: "CoinMarketCap Data" | "Fallback Market Model" | "Development Mock";
+  connectionStatus: "CoinMarketCap Connected" | "Fallback Mode" | "Development Mode";
+  mode: DataSourceMode;
+  reason?: string;
+};
+
+const CANONICAL_NARRATIVE_LABELS = new Set([
+  "AI & Big Data",
+  "Layer 2",
+  "DeFi",
+  "RWA",
+  "Smart Contract Platform",
+  "Gaming",
+  "Memes",
+]);
+
+const NARRATIVE_NORMALIZATION_RULES: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /(ai|artificial intelligence|agents?|compute|gpu|machine learning|big data|data|inference|depin)/i, label: "AI & Big Data" },
+  { pattern: /(jobs?|careers?|hiring|employment|talent)/i, label: "AI & Big Data" },
+  { pattern: /(layer 2|l2|rollup|rollups?|scaling|zk|zero knowledge)/i, label: "Layer 2" },
+  { pattern: /(defi|dex|lending|yield|liquidity|dao maker|launchpad|ido|ieo|governance)/i, label: "DeFi" },
+  { pattern: /(rwa|real world asset|real world assets|tokeni[sz]ation|treasury|credit|bond)/i, label: "RWA" },
+  { pattern: /(smart contract|layer 1|l1|platform|ethereum|eth|solana|base|avalanche)/i, label: "Smart Contract Platform" },
+  { pattern: /(gaming|gamefi|metaverse|consumer|trading card game|tcg|nft)/i, label: "Gaming" },
+  { pattern: /(meme|memes|community|social)/i, label: "Memes" },
+];
+
 const FALLBACK_CATEGORIES: CategoryItem[] = [
   {
     id: 1,
@@ -251,15 +281,66 @@ const FALLBACK_CATEGORIES: CategoryItem[] = [
 ];
 
 export function createFallbackNarratives() {
-  return buildNarrativesFromCategories(FALLBACK_CATEGORIES, "CoinMarketCap Free Plan");
+  const generatedAt = new Date().toISOString();
+  return buildNarrativesFromCategories(
+    FALLBACK_CATEGORIES,
+    getFallbackSourceLabel(),
+    buildDataSourceMeta(isDevelopmentMode() ? "development" : "fallback"),
+    generatedAt,
+  );
 }
 
 export function createFallbackGlobalMetrics() {
-  return buildGlobalMetricsFromCategories(FALLBACK_CATEGORIES, "CoinMarketCap Free Plan");
+  const generatedAt = new Date().toISOString();
+  return buildGlobalMetricsFromCategories(
+    FALLBACK_CATEGORIES,
+    getFallbackSourceLabel(),
+    buildDataSourceMeta(isDevelopmentMode() ? "development" : "fallback"),
+    generatedAt,
+  );
 }
 
 export function createFallbackLatestNews() {
-  return buildLatestNewsFromCategories(FALLBACK_CATEGORIES, "CoinMarketCap Free Plan");
+  return buildLatestNewsFromCategories(FALLBACK_CATEGORIES, getFallbackSourceLabel());
+}
+
+function isDevelopmentMode() {
+  return process.env.NODE_ENV === "development";
+}
+
+function getFallbackSourceLabel() {
+  return isDevelopmentMode() ? "Development Mock" : "Fallback Market Model";
+}
+
+function getFallbackConnectionStatus() {
+  return isDevelopmentMode() ? "Development Mode" : "Fallback Mode";
+}
+
+function buildDataSourceMeta(mode: DataSourceMode, reason?: string): DataSourceMeta {
+  if (mode === "live") {
+    return {
+      source: "CoinMarketCap Data",
+      connectionStatus: "CoinMarketCap Connected",
+      mode,
+      reason,
+    };
+  }
+
+  if (mode === "development") {
+    return {
+      source: "Development Mock",
+      connectionStatus: "Development Mode",
+      mode,
+      reason,
+    };
+  }
+
+  return {
+    source: "Fallback Market Model",
+    connectionStatus: "Fallback Mode",
+    mode,
+    reason,
+  };
 }
 
 function getBaseUrl() {
@@ -287,7 +368,10 @@ function buildUrl(path: string, params?: Record<string, string | number | undefi
 async function requestCmc<T>(
   path: string,
   params?: Record<string, string | number | undefined>,
-): Promise<{ ok: true; data: T; source: "live" } | { ok: false; error: string; unsupported: boolean }> {
+): Promise<
+  | { ok: true; data: T; source: "live" }
+  | { ok: false; error: string; unsupported: boolean; quotaExceeded: boolean; unavailable: boolean }
+> {
   const apiKey = getApiKey();
 
   if (!apiKey) {
@@ -295,6 +379,8 @@ async function requestCmc<T>(
       ok: false,
       error: "Missing COINMARKETCAP_API_KEY in environment.",
       unsupported: true,
+      quotaExceeded: false,
+      unavailable: false,
     };
   }
 
@@ -314,6 +400,8 @@ async function requestCmc<T>(
       ok: false,
       error: error instanceof Error ? error.message : `CoinMarketCap request failed for ${path}`,
       unsupported: false,
+      quotaExceeded: false,
+      unavailable: true,
     };
   }
 
@@ -327,12 +415,16 @@ async function requestCmc<T>(
   const errorMessage = body?.status?.error_message?.trim() || "";
   const errorCode = body?.status?.error_code;
   const unsupported = /doesn't support this endpoint|subscription plan/i.test(errorMessage);
+  const quotaExceeded = response.status === 429 || /quota|rate limit/i.test(errorMessage);
+  const unavailable = response.status >= 500 || response.status === 404;
 
   if (!response.ok || (typeof errorCode === "number" && errorCode !== 0)) {
     return {
       ok: false,
       error: errorMessage || `CoinMarketCap request failed for ${path} (${response.status})`,
       unsupported: unsupported || response.status === 401 || response.status === 402 || response.status === 403,
+      quotaExceeded,
+      unavailable: unavailable || (!unsupported && !quotaExceeded),
     };
   }
 
@@ -341,6 +433,8 @@ async function requestCmc<T>(
       ok: false,
       error: `CoinMarketCap returned an empty response for ${path}`,
       unsupported: false,
+      quotaExceeded: false,
+      unavailable: true,
     };
   }
 
@@ -374,16 +468,93 @@ function formatTimestamp(value?: string) {
 }
 
 function normalizeCategory(category: CategoryItem): CategoryItem {
+  const label = canonicalNarrativeLabel(category);
+
   return {
     ...category,
-    title: category.title ?? category.name ?? "Unknown",
-    name: category.name ?? category.title ?? "Unknown",
+    title: label,
+    name: label,
     last_updated: category.last_updated ?? new Date().toISOString(),
   };
 }
 
+function canonicalNarrativeLabel(category: CategoryItem) {
+  const text = `${category.title ?? ""} ${category.name ?? ""} ${category.description ?? ""}`.trim();
+
+  for (const rule of NARRATIVE_NORMALIZATION_RULES) {
+    if (rule.pattern.test(text)) {
+      return rule.label;
+    }
+  }
+
+  const fallback = `${category.title ?? category.name ?? "Unknown"}`.trim();
+  return fallback || "Unknown";
+}
+
+function aggregateNormalizedCategories(inputCategories: CategoryItem[]) {
+  const grouped = new Map<
+    string,
+    { category: CategoryItem; weight: number; latestUpdated: string; sourceCount: number }
+  >();
+
+  for (const rawCategory of inputCategories) {
+    const category = normalizeCategory(rawCategory);
+    const key = category.name ?? "Unknown";
+    const weight = Math.max(1, toNumber(category.market_cap, toNumber(category.num_tokens, 1)));
+    const current = grouped.get(key);
+
+    if (!current) {
+      grouped.set(key, {
+        category: {
+          ...category,
+          num_tokens: toNumber(category.num_tokens, 0),
+          market_cap: toNumber(category.market_cap, 0),
+          volume: toNumber(category.volume, 0),
+          avg_price_change: toNumber(category.avg_price_change, 0),
+          market_cap_change: toNumber(category.market_cap_change, 0),
+          volume_change: toNumber(category.volume_change, 0),
+        },
+        weight,
+        latestUpdated: category.last_updated ?? new Date().toISOString(),
+        sourceCount: 1,
+      });
+      continue;
+    }
+
+    const totalWeight = current.weight + weight;
+    const mergedCategory = current.category;
+    const nextNumTokens = toNumber(mergedCategory.num_tokens, 0) + toNumber(category.num_tokens, 0);
+    const nextMarketCap = toNumber(mergedCategory.market_cap, 0) + toNumber(category.market_cap, 0);
+    const nextVolume = toNumber(mergedCategory.volume, 0) + toNumber(category.volume, 0);
+    const average = (left: number, right: number) =>
+      Math.round(((left * current.weight) + (right * weight)) / Math.max(1, totalWeight));
+
+    current.category = {
+      ...mergedCategory,
+      num_tokens: nextNumTokens,
+      market_cap: nextMarketCap,
+      volume: nextVolume,
+      avg_price_change: average(toNumber(mergedCategory.avg_price_change, 0), toNumber(category.avg_price_change, 0)),
+      market_cap_change: average(
+        toNumber(mergedCategory.market_cap_change, 0),
+        toNumber(category.market_cap_change, 0),
+      ),
+      volume_change: average(toNumber(mergedCategory.volume_change, 0), toNumber(category.volume_change, 0)),
+      last_updated:
+        new Date(category.last_updated ?? current.latestUpdated).getTime() >= new Date(current.latestUpdated).getTime()
+          ? category.last_updated ?? current.latestUpdated
+          : current.latestUpdated,
+    };
+    current.weight = totalWeight;
+    current.latestUpdated = current.category.last_updated ?? current.latestUpdated;
+    current.sourceCount += 1;
+  }
+
+  return Array.from(grouped.values()).map((entry) => entry.category);
+}
+
 function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext {
-  const categories = inputCategories.map(normalizeCategory).filter((category) => Boolean(category.name));
+  const categories = aggregateNormalizedCategories(inputCategories).filter((category) => Boolean(category.name));
   const rawScores = categories.map((category) => {
     const marketCapChange = toNumber(category.market_cap_change, 0);
     const volumeChange = toNumber(category.volume_change, 0);
@@ -461,6 +632,7 @@ function buildCategoryContext(inputCategories: CategoryItem[]): CmcMarketContext
 
 function narrativeName(category: CategoryItem) {
   const name = (category.title ?? category.name ?? "Market Rotation").trim();
+  if (CANONICAL_NARRATIVE_LABELS.has(name)) return name;
   return /narrative/i.test(name) ? name : `${name} Narrative`;
 }
 
@@ -832,7 +1004,12 @@ function buildFallbackMetrics(context: CmcMarketContext) {
   };
 }
 
-function buildGlobalMetricsFromCategories(categories: CategoryItem[], source: string) {
+function buildGlobalMetricsFromCategories(
+  categories: CategoryItem[],
+  source: string,
+  dataSource?: DataSourceMeta,
+  generatedAt?: string,
+) {
   const context = buildCategoryContext(categories);
   const metrics = buildFallbackMetrics(context);
   const regime = classifyRegime(metrics.fearAndGreedValue, metrics.altcoinSeasonIndex);
@@ -840,11 +1017,8 @@ function buildGlobalMetricsFromCategories(categories: CategoryItem[], source: st
 
   return {
     source,
-    updatedAt:
-      context.leader.last_updated ??
-      context.runnerUp.last_updated ??
-      context.secondary.last_updated ??
-      new Date().toISOString(),
+    connectionStatus: dataSource?.connectionStatus ?? (source === "CoinMarketCap Data" ? "CoinMarketCap Connected" : getFallbackConnectionStatus()),
+    updatedAt: generatedAt ?? new Date().toISOString(),
     metrics,
     marketRegime: {
       active: regime,
@@ -898,10 +1072,16 @@ function buildGlobalMetricsFromCategories(categories: CategoryItem[], source: st
       ],
     } satisfies MarketRegimePanel,
     riskScore: risk satisfies RiskScorePanel,
+    dataSource: dataSource ?? buildDataSourceMeta(source === "CoinMarketCap Data" ? "live" : "fallback"),
   };
 }
 
-function buildNarrativesFromCategories(categories: CategoryItem[], source: string) {
+function buildNarrativesFromCategories(
+  categories: CategoryItem[],
+  source: string,
+  dataSource?: DataSourceMeta,
+  generatedAt?: string,
+) {
   const context = buildCategoryContext(categories);
   const leader = context.leader;
   const runnerUp = context.runnerUp;
@@ -920,11 +1100,8 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
 
   return {
     source,
-    updatedAt:
-      leader.last_updated ??
-      runnerUp.last_updated ??
-      latestNews[0]?.publishedAt ??
-      new Date().toISOString(),
+    connectionStatus: dataSource?.connectionStatus ?? (source === "CoinMarketCap Data" ? "CoinMarketCap Connected" : getFallbackConnectionStatus()),
+    updatedAt: generatedAt ?? new Date().toISOString(),
     dominantNarrative: {
       name: narrativeName(leader),
       status: "Dominant",
@@ -968,12 +1145,18 @@ function buildNarrativesFromCategories(categories: CategoryItem[], source: strin
       momentum: index < 2 ? "rising" : "watching",
     })),
     news: latestNews,
+    dataSource: dataSource ?? buildDataSourceMeta(source === "CoinMarketCap Data" ? "live" : "fallback"),
   };
 }
 
-function buildStrategyFromContext(categories: CategoryItem[], source: string) {
-  const narratives = buildNarrativesFromCategories(categories, source);
-  const globalMetrics = buildGlobalMetricsFromCategories(categories, source);
+function buildStrategyFromContext(
+  categories: CategoryItem[],
+  source: string,
+  dataSource?: DataSourceMeta,
+  generatedAt?: string,
+) {
+  const narratives = buildNarrativesFromCategories(categories, source, dataSource, generatedAt);
+  const globalMetrics = buildGlobalMetricsFromCategories(categories, source, dataSource, generatedAt);
   const news = buildLatestNewsFromCategories(categories, source);
   const riskScore = globalMetrics.riskScore.score;
   const confidenceScore = clamp(Math.round(narratives.narrativeStrength.score * 0.6 + (100 - riskScore) * 0.4), 0, 100);
@@ -984,7 +1167,10 @@ function buildStrategyFromContext(categories: CategoryItem[], source: string) {
 
   return {
     source,
-    updatedAt: globalMetrics.updatedAt,
+    connectionStatus:
+      dataSource?.connectionStatus ??
+      (source === "CoinMarketCap Data" ? "CoinMarketCap Connected" : getFallbackConnectionStatus()),
+    updatedAt: generatedAt ?? globalMetrics.updatedAt,
     strategyOutputPanel: {
       confidenceScore,
       confidenceLabel: confidenceScore >= 80 ? "High confidence" : "Medium confidence",
@@ -1006,6 +1192,7 @@ function buildStrategyFromContext(categories: CategoryItem[], source: string) {
       watchlist: topCoins,
     } satisfies StrategyOutputPanel,
     news: news.slice(0, 3),
+    dataSource: dataSource ?? buildDataSourceMeta(source === "CoinMarketCap Data" ? "live" : "fallback"),
     legacy: {
       confidenceScore: confidenceScore / 100,
       strategyType: "narrative-following",
@@ -1019,20 +1206,32 @@ function buildStrategyFromContext(categories: CategoryItem[], source: string) {
   };
 }
 
-async function loadCategoryUniverse() {
+async function loadCategoryUniverse(): Promise<{ categories: CategoryItem[]; dataSource: DataSourceMeta }> {
   const response = await requestCmc<CategoryItem[]>("/v1/cryptocurrency/categories");
 
   if (response.ok && Array.isArray(response.data) && response.data.length > 0) {
-    return response.data;
+    return {
+      categories: response.data,
+      dataSource: buildDataSourceMeta("live"),
+    };
   }
 
-  return FALLBACK_CATEGORIES;
+  const dataSource = buildDataSourceMeta(
+    isDevelopmentMode() ? "development" : "fallback",
+    response.ok ? "CoinMarketCap returned no categories." : response.error,
+  );
+
+  return {
+    categories: FALLBACK_CATEGORIES,
+    dataSource,
+  };
 }
 
 export async function getTrendingNarratives() {
   try {
-    const categories = await loadCategoryUniverse();
-    return buildNarrativesFromCategories(categories, "CoinMarketCap Free Categories");
+    const generatedAt = new Date().toISOString();
+    const { categories, dataSource } = await loadCategoryUniverse();
+    return buildNarrativesFromCategories(categories, dataSource.source, dataSource, generatedAt);
   } catch {
     return createFallbackNarratives();
   }
@@ -1040,8 +1239,9 @@ export async function getTrendingNarratives() {
 
 export async function getGlobalMetrics() {
   try {
-    const categories = await loadCategoryUniverse();
-    return buildGlobalMetricsFromCategories(categories, "CoinMarketCap Free Categories");
+    const generatedAt = new Date().toISOString();
+    const { categories, dataSource } = await loadCategoryUniverse();
+    return buildGlobalMetricsFromCategories(categories, dataSource.source, dataSource, generatedAt);
   } catch {
     return createFallbackGlobalMetrics();
   }
@@ -1049,8 +1249,8 @@ export async function getGlobalMetrics() {
 
 export async function getLatestNews() {
   try {
-    const categories = await loadCategoryUniverse();
-    return buildLatestNewsFromCategories(categories, "CoinMarketCap Free Categories");
+    const { categories, dataSource } = await loadCategoryUniverse();
+    return buildLatestNewsFromCategories(categories, dataSource.source);
   } catch {
     return createFallbackLatestNews();
   }
@@ -1058,10 +1258,50 @@ export async function getLatestNews() {
 
 export async function getStrategySnapshot() {
   try {
-    const categories = await loadCategoryUniverse();
-    return buildStrategyFromContext(categories, "CoinMarketCap Free Categories");
+    const generatedAt = new Date().toISOString();
+    const { categories, dataSource } = await loadCategoryUniverse();
+    const narratives = buildNarrativesFromCategories(categories, dataSource.source, dataSource, generatedAt);
+    const globalMetrics = buildGlobalMetricsFromCategories(categories, dataSource.source, dataSource, generatedAt);
+    const strategy = buildStrategyFromContext(categories, dataSource.source, dataSource, generatedAt);
+
+    return {
+      platform: "CMC NarrativeX Agent",
+      source: dataSource.source,
+      connectionStatus: dataSource.connectionStatus,
+      dataSource,
+      updatedAt: generatedAt,
+      narratives,
+      narrativeWatchlist: narratives.watchlist,
+      narrativeHeatmap: narratives.narrativeHeatmap,
+      regime: globalMetrics.marketRegime,
+      risk: globalMetrics.riskScore,
+      strategy: strategy.strategyOutputPanel,
+      news: strategy.news,
+      legacy: strategy.legacy,
+    };
   } catch {
-    const fallbackCategories = FALLBACK_CATEGORIES;
-    return buildStrategyFromContext(fallbackCategories, "CoinMarketCap Free Plan");
+    const fallbackMode = isDevelopmentMode() ? "development" : "fallback";
+    const dataSource = buildDataSourceMeta(fallbackMode);
+    const categories = FALLBACK_CATEGORIES;
+    const generatedAt = new Date().toISOString();
+    const narratives = buildNarrativesFromCategories(categories, dataSource.source, dataSource, generatedAt);
+    const globalMetrics = buildGlobalMetricsFromCategories(categories, dataSource.source, dataSource, generatedAt);
+    const strategy = buildStrategyFromContext(categories, dataSource.source, dataSource, generatedAt);
+
+    return {
+      platform: "CMC NarrativeX Agent",
+      source: dataSource.source,
+      connectionStatus: dataSource.connectionStatus,
+      dataSource,
+      updatedAt: generatedAt,
+      narratives,
+      narrativeWatchlist: narratives.watchlist,
+      narrativeHeatmap: narratives.narrativeHeatmap,
+      regime: globalMetrics.marketRegime,
+      risk: globalMetrics.riskScore,
+      strategy: strategy.strategyOutputPanel,
+      news: strategy.news,
+      legacy: strategy.legacy,
+    };
   }
 }

@@ -9,7 +9,10 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        platform: narrative.source,
+        platform: "CMC NarrativeX Agent",
+        source: narrative.source,
+        connectionStatus: narrative.connectionStatus,
+        dataSource: narrative.dataSource,
         endpoint: "narratives",
         updatedAt: narrative.updatedAt,
         data: {
@@ -37,7 +40,10 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        platform: narrative.source,
+        platform: "CMC NarrativeX Agent",
+        source: narrative.source,
+        connectionStatus: narrative.connectionStatus,
+        dataSource: narrative.dataSource,
         endpoint: "narratives",
         updatedAt: narrative.updatedAt,
         data: {

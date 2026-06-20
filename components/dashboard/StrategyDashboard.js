@@ -5,10 +5,7 @@ import WidgetCard from "@/components/dashboard/WidgetCard";
 import Badge from "@/components/ui/Badge";
 import PulseLine from "@/components/ui/PulseLine";
 import RadialGauge from "@/components/ui/RadialGauge";
-import {
-  getCoinMarketCapMcpPlan,
-  loadStrategyPlatformSnapshot,
-} from "@/lib/strategy-platform";
+import { loadStrategyPlatformSnapshot } from "@/lib/strategy-platform";
 import { buildNarrativeRotationAgent } from "@/lib/narrative-agent";
 
 const REGIME_TONES = {
@@ -26,6 +23,42 @@ const LIFECYCLE_TONES = {
   Peak: "amber",
   Exhausting: "danger",
 };
+
+function getSourceTone(source) {
+  if (source === "CoinMarketCap Data") {
+    return "signal";
+  }
+
+  if (source === "Development Mock") {
+    return "neutral";
+  }
+
+  return "amber";
+}
+
+function getConnectionTone(status) {
+  if (status === "CoinMarketCap Connected") {
+    return "pulse";
+  }
+
+  if (status === "Development Mode") {
+    return "neutral";
+  }
+
+  return "amber";
+}
+
+function getModeBadgeLabel(source) {
+  if (source === "CoinMarketCap Data") {
+    return "Live Market Data";
+  }
+
+  if (source === "Development Mock") {
+    return "Development Mode";
+  }
+
+  return "Fallback Mode";
+}
 
 function SkeletonBlock({ className = "" }) {
   return <div className={`animate-pulse rounded-xl bg-white/5 ${className}`} />;
@@ -719,6 +752,8 @@ function MarketRegimePanel({ regime }) {
 }
 
 function RiskScorePanel({ risk }) {
+  const factors = Array.isArray(risk?.factors) ? risk.factors : [];
+
   return (
     <WidgetCard
       eyebrow="Risk score"
@@ -748,7 +783,7 @@ function RiskScorePanel({ risk }) {
         </div>
 
         <div className="space-y-3">
-          {risk.factors.map((factor) => (
+          {factors.map((factor) => (
             <div key={factor.name} className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-mist-500">{factor.name}</span>
@@ -882,42 +917,44 @@ function AiStrategyOutputPanel({ snapshot, agent }) {
           </div>
         </div>
 
-        <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="label-eyebrow">Service layer snapshot</p>
-              <h3 className="mt-2 font-display text-lg font-semibold text-mist-100">
-                CoinMarketCap-backed
-              </h3>
+          <div className="rounded-2xl border border-white/5 bg-ink-850/70 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="label-eyebrow">Service layer snapshot</p>
+                <h3 className="mt-2 font-display text-lg font-semibold text-mist-100">
+                  {snapshot.source}
+                </h3>
+              </div>
+              <Badge tone={getConnectionTone(snapshot.connectionStatus)}>
+                {snapshot.connectionStatus}
+              </Badge>
             </div>
-            <Badge tone="signal">Live mock</Badge>
-          </div>
-          <div className="mt-4 space-y-3">
-            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
-                Dominant Narrative
-              </p>
-              <p className="mt-1.5 text-sm font-medium text-mist-100">
-                {snapshot.narratives.dominantNarrative.summary}
-              </p>
+            <div className="mt-4 space-y-3">
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                  Dominant Narrative
+                </p>
+                <p className="mt-1.5 text-sm font-medium text-mist-100">
+                  {snapshot.narratives.dominantNarrative.summary}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                  Market Regime
+                </p>
+                <p className="mt-1.5 text-sm font-medium text-mist-100">
+                  {snapshot.regime.summary}
+                </p>
+              </div>
+              <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
+                <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
+                  Risk Score
+                </p>
+                <p className="mt-1.5 text-sm font-medium text-mist-100">
+                  {snapshot.risk.description}
+                </p>
+              </div>
             </div>
-            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
-                Market Regime
-              </p>
-              <p className="mt-1.5 text-sm font-medium text-mist-100">
-                {snapshot.regime.summary}
-              </p>
-            </div>
-            <div className="rounded-xl border border-white/5 bg-ink-850 p-3">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-mist-500">
-                Risk Score
-              </p>
-              <p className="mt-1.5 text-sm font-medium text-mist-100">
-                {snapshot.risk.description}
-              </p>
-            </div>
-          </div>
         </div>
       </div>
     </WidgetCard>
@@ -973,7 +1010,6 @@ export default function StrategyDashboard() {
     return <ErrorState error={error} onRetry={() => setRefreshToken((value) => value + 1)} />;
   }
 
-  const mcpPlan = getCoinMarketCapMcpPlan();
   const updatedAt = new Date(snapshot.updatedAt);
   const agent = buildNarrativeRotationAgent(snapshot, {
     riskProfile,
@@ -1002,17 +1038,17 @@ export default function StrategyDashboard() {
               Live portfolio posture
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-mist-500">
-              Live narrative, regime, and risk readings feed the decision engine above and this
-              snapshot below without changing the dashboard structure.
+              Current data source, connection status, and update timestamp are shown below alongside
+              the live narrative, regime, and risk readings.
             </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Badge tone="pulse">Agent mode</Badge>
-            <Badge tone="signal">{snapshot.source}</Badge>
-            <Badge tone="signal">{mcpPlan.provider}</Badge>
+            <Badge tone={getSourceTone(snapshot.source)}>{snapshot.source}</Badge>
+            <Badge tone={getSourceTone(snapshot.source)}>{getModeBadgeLabel(snapshot.source)}</Badge>
+            <Badge tone={getConnectionTone(snapshot.connectionStatus)}>{snapshot.connectionStatus}</Badge>
             <Badge tone="neutral">
-              Updated {updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              Updated {updatedAt.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}
             </Badge>
           </div>
         </div>

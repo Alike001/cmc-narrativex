@@ -15,9 +15,9 @@ React 19, and Tailwind CSS, in plain JavaScript (no TypeScript).
   - **Risk Score** — leverage, liquidity, and correlation rolled into one number
   - **Generated Strategy** — a thesis, conviction level, and allocation tilt
 
-All data currently comes from `lib/mockData.js`. Swap the exports in that file for real API
-calls (or fetch them in the page/server components) to go live — the widget components don't
-need to change, since they only consume the shapes already defined there.
+The marketing landing page uses a local development content layer in `lib/mockData.js`.
+The dashboard now pulls from the CoinMarketCap service layer in `lib/cmc.ts` through the
+`/api/*` routes, with fallback-market-model data only when live access is unavailable.
 
 ## Project structure
 
@@ -33,7 +33,7 @@ components/
   dashboard/           → header + the six widget components
   ui/                  → shared primitives (RadialGauge, PulseLine, Badge)
 lib/
-  mockData.js          → all dashboard data lives here
+  mockData.js          → landing-page development content
 ```
 
 ## Getting started

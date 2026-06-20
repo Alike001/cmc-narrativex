@@ -42,7 +42,10 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        platform: globalMetrics.source,
+        platform: "CMC NarrativeX Agent",
+        source: globalMetrics.source,
+        connectionStatus: globalMetrics.connectionStatus,
+        dataSource: globalMetrics.dataSource,
         endpoint: "risk",
         updatedAt: globalMetrics.updatedAt,
         data: {
@@ -99,7 +102,10 @@ export async function GET() {
 
     return NextResponse.json(
       {
-        platform: globalMetrics.source,
+        platform: "CMC NarrativeX Agent",
+        source: globalMetrics.source,
+        connectionStatus: globalMetrics.connectionStatus,
+        dataSource: globalMetrics.dataSource,
         endpoint: "risk",
         updatedAt: globalMetrics.updatedAt,
         data: {

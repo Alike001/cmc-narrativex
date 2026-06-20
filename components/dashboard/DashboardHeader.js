@@ -19,9 +19,9 @@ export default function DashboardHeader() {
         </Link>
 
         <div className="flex items-center gap-5">
-          <span className="hidden items-center gap-1.5 font-mono text-[11px] text-pulse-400 sm:flex">
-            <span className="h-1.5 w-1.5 animate-pulseLine rounded-full bg-pulse-500" />
-            Mock API · MCP ready
+          <span className="hidden items-center gap-1.5 font-mono text-[11px] text-signal-400 sm:flex">
+            <span className="h-1.5 w-1.5 animate-pulseLine rounded-full bg-signal-500" />
+            Production-ready market stack
           </span>
           <Link
             href="/"
